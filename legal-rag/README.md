@@ -75,7 +75,9 @@ data/
 ```
 
 Do not commit competition data. Copy all organizer-provided `context_*.json` files
-into `data/corpus/`; each file must contain `id`, `name`, `link`, and `passage`.
+into `data/corpus/`; each usable file must contain `id`, `link`, and a nonempty
+`passage`. The organizer corpus may omit `name`; it is treated as an empty document
+name. Empty passages are skipped by the corpus index.
 Copy the organizer-provided question file into `data/questions/`. Only `.gitkeep`
 files are tracked in these directories.
 

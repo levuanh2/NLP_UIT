@@ -64,6 +64,25 @@ def test_json_context_parser_maps_fields(tmp_path: Path) -> None:
     assert document.structure is None
 
 
+def test_json_context_parser_allows_missing_optional_name(tmp_path: Path) -> None:
+    source = tmp_path / "context_000001.json"
+    source.write_text(
+        json.dumps(
+            {
+                "id": 740,
+                "link": "https://example.test/legal/740",
+                "passage": "Nội dung văn bản.",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    document = JsonContextParser().parse(source)
+
+    assert document.document_name == ""
+
+
 def test_json_context_parser_rejects_invalid_json(tmp_path: Path) -> None:
     # Arrange
     source = tmp_path / "context_000001.json"
