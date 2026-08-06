@@ -1,0 +1,14 @@
+application:
+  name_env: APP_NAME
+  environment_env: APP_ENV
+  debug_env: APP_DEBUG
+  log_level_env: LOG_LEVEL
+
+paths:
+  project_root_env: PROJECT_ROOT
+  data_dir_env: DATA_DIR
+  corpus_data_dir_env: CORPUS_DATA_DIR
+  question_data_dir_env: QUESTION_DATA_DIR
+  output_dir_env: OUTPUT_DIR
+  cache_data_dir_env: CACHE_DATA_DIR
+  model_dir_env: MODEL_DIR

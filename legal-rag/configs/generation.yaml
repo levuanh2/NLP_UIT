@@ -1,0 +1,10 @@
+language: vi
+max_new_tokens_env: MAX_NEW_TOKENS
+temperature_env: TEMPERATURE
+top_p_env: TOP_P
+do_sample_env: DO_SAMPLE
+grounded_only_env: GROUNDED_ONLY
+require_citation_env: REQUIRE_CITATION
+abstain_when_insufficient_env: ABSTAIN_WHEN_INSUFFICIENT
+abstention_message: >
+  Không tìm thấy đủ căn cứ pháp lý trong các văn bản được cung cấp.

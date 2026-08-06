@@ -1,0 +1,18 @@
+strategy: structure_aware_hierarchical
+
+parent:
+  unit: article
+  target_tokens_env: PARENT_TARGET_TOKENS
+  max_tokens_env: PARENT_MAX_TOKENS
+
+child:
+  unit: clause_or_semantic_segment
+  target_tokens_env: CHILD_TARGET_TOKENS
+  max_tokens_env: CHILD_MAX_TOKENS
+
+preserve:
+  chapter: true
+  section: true
+  article: true
+  clause: true
+  point: true

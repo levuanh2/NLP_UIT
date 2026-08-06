@@ -1,0 +1,12 @@
+dataset:
+  path_env: QUESTION_DATA_DIR
+
+retrieval:
+  metrics:
+    - recall_at_k
+    - mean_reciprocal_rank
+
+generation:
+  metrics:
+    - answer_similarity
+    - citation_precision

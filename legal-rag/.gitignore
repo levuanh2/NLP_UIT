@@ -1,0 +1,68 @@
+.env
+
+# ==========================
+# Competition Dataset
+# ==========================
+
+data/corpus/*
+!data/corpus/.gitkeep
+
+data/questions/*
+!data/questions/.gitkeep
+
+data/outputs/*
+!data/outputs/.gitkeep
+
+data/cache/*
+!data/cache/.gitkeep
+
+# ==========================
+# Local databases
+# ==========================
+
+storage/faiss/*
+!storage/faiss/.gitkeep
+
+storage/bm25/*
+!storage/bm25/.gitkeep
+
+storage/sqlite/*
+!storage/sqlite/.gitkeep
+
+*.db
+*.sqlite
+*.sqlite3
+
+# ==========================
+# Downloaded Models
+# ==========================
+
+models/*
+!models/.gitkeep
+
+# ==========================
+# Python
+# ==========================
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ==========================
+# Virtual Environment
+# ==========================
+
+.venv/
+venv/
+env/
+
+# ==========================
+# IDE
+# ==========================
+
+.vscode/
+.idea/

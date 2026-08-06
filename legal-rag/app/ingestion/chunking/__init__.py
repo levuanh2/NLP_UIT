@@ -1,0 +1,1 @@
+"""Structure-aware hierarchical chunking."""

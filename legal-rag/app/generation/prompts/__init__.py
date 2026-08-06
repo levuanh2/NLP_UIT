@@ -1,0 +1,1 @@
+"""Legal prompt templates."""

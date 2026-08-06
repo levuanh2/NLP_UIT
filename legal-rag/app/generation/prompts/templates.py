@@ -1,0 +1,4 @@
+"""Prompt section templates."""
+
+EVIDENCE_HEADER = "LEGAL EVIDENCE"
+QUESTION_HEADER = "USER QUESTION"

@@ -1,0 +1,27 @@
+query_analysis:
+  enabled: true
+
+metadata_filter:
+  enabled_env: METADATA_FILTER_ENABLED
+  min_confidence_env: METADATA_FILTER_MIN_CONFIDENCE
+  fallback_to_full_corpus_env: METADATA_FILTER_FALLBACK_TO_FULL_CORPUS
+
+dense:
+  top_n_env: DENSE_TOP_N
+
+lexical:
+  enabled: true
+  top_n_env: BM25_TOP_N
+
+fusion:
+  method: rrf
+  top_n_env: FUSION_TOP_N
+  rrf_k_env: RRF_K
+
+reranking:
+  enabled_env: RERANK_ENABLED
+  top_k_env: RERANK_TOP_K
+
+context:
+  expand_child_to_parent: true
+  deduplicate_parents: true

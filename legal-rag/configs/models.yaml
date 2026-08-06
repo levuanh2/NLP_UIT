@@ -1,0 +1,18 @@
+llm:
+  provider: local_transformers
+  model_name_env: LLM_MODEL_NAME
+  local_files_only_env: MODEL_LOCAL_FILES_ONLY
+  device_env: MODEL_DEVICE
+  dtype_env: MODEL_DTYPE
+
+embedding:
+  provider: sentence_transformers
+  model_name_env: EMBEDDING_MODEL_NAME
+  device_env: EMBEDDING_DEVICE
+  query_prefix: "query: "
+  passage_prefix: "passage: "
+
+reranker:
+  provider: local_transformers
+  model_name_env: RERANKER_MODEL_NAME
+  device_env: RERANKER_DEVICE
