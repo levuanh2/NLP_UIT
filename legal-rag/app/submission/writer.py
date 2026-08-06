@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+from app.core.exceptions import SubmissionValidationError
 from app.domain.submission import SubmissionAnswer
 
 
@@ -17,6 +18,16 @@ class SubmissionWriter:
         output_path: Path,
     ) -> None:
         """Write the exact submission schema as indented UTF-8 JSON."""
+        if output_path.name != "submission.json":
+            raise SubmissionValidationError(
+                "Subtask 2 output file must be named submission.json."
+            )
+        if self.encoding.lower().replace("_", "-") != "utf-8":
+            raise SubmissionValidationError("Submission encoding must be UTF-8.")
+        if self.ensure_ascii:
+            raise SubmissionValidationError(
+                "ensure_ascii must be False to preserve Vietnamese characters."
+            )
         output_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             question_id: answer.model_dump()

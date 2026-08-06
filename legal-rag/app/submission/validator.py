@@ -8,7 +8,7 @@ from app.domain.submission import SubmissionValidationResult
 class SubmissionValidator:
     def validate(
         self,
-        submission: dict[str, Any],
+        submission: Any,
         expected_question_ids: set[str],
     ) -> SubmissionValidationResult:
         """Validate IDs and require each value to contain only a nonempty answer."""
@@ -21,9 +21,11 @@ class SubmissionValidator:
                 unexpected_question_ids=[],
             )
 
-        actual_ids = set(submission)
+        actual_ids = {key for key in submission if isinstance(key, str)}
         missing = sorted(expected_question_ids - actual_ids)
         unexpected = sorted(actual_ids - expected_question_ids)
+        if len(actual_ids) != len(submission):
+            errors.append("Every question ID must be a string.")
         if missing:
             errors.append(f"Missing question IDs: {', '.join(missing)}")
         if unexpected:
@@ -31,7 +33,6 @@ class SubmissionValidator:
 
         for question_id, value in submission.items():
             if not isinstance(question_id, str):
-                errors.append("Every question ID must be a string.")
                 continue
             if not isinstance(value, dict):
                 errors.append(f"Answer for {question_id} must be an object.")

@@ -37,3 +37,25 @@ def test_submission_validator_rejects_extra_question() -> None:
     # Assert
     assert result.unexpected_question_ids == ["2"]
     assert not result.valid
+
+
+def test_submission_validator_rejects_extra_fields() -> None:
+    result = SubmissionValidator().validate(
+        {"1": {"answer": "A", "confidence": "high"}}, {"1"}
+    )
+
+    assert not result.valid
+    assert "only 'answer'" in result.errors[0]
+
+
+def test_submission_validator_rejects_empty_answer() -> None:
+    result = SubmissionValidator().validate({"1": {"answer": "  "}}, {"1"})
+
+    assert not result.valid
+
+
+def test_submission_validator_rejects_non_object_root() -> None:
+    result = SubmissionValidator().validate([], {"1"})
+
+    assert not result.valid
+    assert result.missing_question_ids == ["1"]

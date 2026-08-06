@@ -111,21 +111,114 @@ Retrieval and local generation are not wired in the scaffold phase.
 
 ## 12. Generate submission.json
 
+### Reproducible answer-memory baseline
+
+The repository includes a scorer-tuned baseline that works without a GPU or a
+downloaded language model. It combines word question similarity, character
+question similarity, and direct question-to-expert-answer similarity. The default
+weights were selected on a deterministic training holdout.
+
 ```bash
-python -m app.cli.main submit --questions data/questions/public_test.json
+python -m app.cli.main solve \
+  --questions data/questions/public-official.json \
+  --train data/questions/train.json
 ```
 
-The formatter contract produces only `{question_id: {"answer": "..."}}`. The CLI
-defaults to `data/outputs/submission.json`. It does not create fake answers; question
-answering orchestration remains TODO.
+This writes detailed retrieval diagnostics to
+`data/outputs/internal-results.json` and the exact competition payload to
+`data/outputs/submission.json`. On the included 7,000-example training set, the
+default configuration scored METEOR 0.297116 and scorer-compatible ROUGE-L
+0.390404 on the fixed 300-example holdout (`seed=2026`). The question/answer
+mixing weight was also checked across seeds 2024, 2025, and 2026; the selected
+0.50 setting had the best mean METEOR among the tested weights. This is a measured
+baseline, not an estimate of hidden-test performance.
+
+Reproduce the evaluation with:
+
+```bash
+python -m app.cli.main evaluate-baseline \
+  --train data/questions/train.json \
+  --holdout-size 300 \
+  --seed 2026
+```
+
+### Vietnamese legal semantic upgrade
+
+For stronger paraphrase matching, build a reusable cache with the local
+`bqbbao6/vietnamese-legal-embedding` model:
+
+```bash
+python scripts/build_semantic_train_embeddings.py \
+  --train data/questions/train.json \
+  --model models/vietnamese-legal-embedding \
+  --output storage/semantic/train_question_embeddings.npz \
+  --batch-size 32
+```
+
+Then enable the tuned lexical-semantic ensemble:
+
+```bash
+python -m app.cli.main solve \
+  --questions data/questions/public-official.json \
+  --train data/questions/train.json \
+  --semantic-model models/vietnamese-legal-embedding \
+  --semantic-cache storage/semantic/train_question_embeddings.npz \
+  --semantic-weight 0.75 \
+  --batch-size 32
+```
+
+The cache stores normalized passage embeddings for the 7,000 training questions
+and validates their ordered IDs before use. Queries use the model's required
+`query:` prefix; cached candidates use `passage:`. Per-query min-max normalization
+puts TF-IDF and cosine scores on a comparable scale before fusion. On the fixed
+300-example holdout (`seed=2026`), this increased METEOR from 0.297116 to 0.307330.
+Across five additional 200-example splits, weight 0.75 had the best mean METEOR
+among 0.00, 0.25, 0.50, 0.75, and 1.00. Lexical-only mode remains available by
+omitting the two semantic path options.
+
+### Optional legal-corpus evidence index
+
+Build the Unicode-aware SQLite FTS5 index with:
+
+```bash
+python -m app.cli.main build-corpus-index \
+  --corpus-zip selected-contexts.zip \
+  --output storage/sqlite/legal_corpus_fts.db
+```
+
+The index is intended to supply evidence to a future grounded LLM. Directly
+replacing expert-memory answers with extracted corpus spans reduced holdout METEOR
+in testing, so corpus fallback is disabled by default. It can be explicitly
+experimented with using `--corpus-index` and `--memory-threshold`.
+
+### Convert existing internal RAG results
+
+```bash
+python -m app.cli.main submit \
+  --questions data/questions/public_test.json \
+  --answers data/outputs/internal-results.json
+```
+
+The answers file is the internal output produced by the RAG pipeline. It may be a
+list of records containing `question_id`, `answer`, and optional debugging fields,
+or an object keyed by question ID. The formatter removes citations, evidence IDs,
+scores, confidence, metadata, context, and reasoning, retaining only
+`{question_id: {"answer": "..."}}`.
+
+Before writing, the command rejects malformed UTF-8/JSON, duplicate JSON keys,
+duplicate question IDs, missing or unexpected IDs, empty/non-string answers, and
+extra submission fields. The output must be named `submission.json`; it is written
+as UTF-8 with Vietnamese characters preserved and then loaded and validated again.
+The CLI never creates fake answers. Question answering orchestration remains TODO.
 
 Complete usage sequence:
 
 1. Copy all organizer `context_*.json` files into `data/corpus/`.
 2. Copy `public_test.json` or `private_test.json` into `data/questions/`.
 3. Run `python -m app.cli.main ingest` to process the entire corpus and build indexes.
-4. Run `python -m app.cli.main submit --questions data/questions/public_test.json`.
-5. Read the result from `data/outputs/submission.json`.
+4. Save real RAG results to `data/outputs/internal-results.json`.
+5. Run `python -m app.cli.main submit --questions data/questions/public_test.json --answers data/outputs/internal-results.json`.
+6. Read the result from `data/outputs/submission.json`.
 
 ## 13. Validate submission.json
 
@@ -149,19 +242,18 @@ algorithm skeletons are explicitly skipped with implementation-phase TODO reason
 
 ## 15. Current implementation status
 
-Current phase:
-Project scaffold only.
+Current phase: the strict submission pipeline, scorer-compatible evaluation,
+TF-IDF expert-answer memory, legal-corpus FTS index, and optional Vietnamese legal
+semantic answer-memory ensemble are runnable. The broader generative RAG modules
+below remain scaffold work.
 
 The following components are currently interfaces/skeletons and contain TODOs:
 
 - Legal structure extraction from JSON passage text
 - Parent-child chunking
 - Metadata extraction
-- Embedding
-- FAISS indexing
-- BM25 indexing
-- Dense retrieval
-- Hybrid retrieval
+- Full-corpus FAISS/BM25 indexing
+- Full-corpus dense and hybrid retrieval
 - RRF
 - Reranking
 - Parent context expansion
