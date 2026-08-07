@@ -29,6 +29,9 @@ storage/bm25/*
 storage/sqlite/*
 !storage/sqlite/.gitkeep
 
+storage/semantic/*
+!storage/semantic/.gitkeep
+
 *.db
 *.sqlite
 *.sqlite3
@@ -46,6 +49,7 @@ models/*
 
 __pycache__/
 *.py[cod]
+*.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
