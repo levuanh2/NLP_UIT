@@ -1,5 +1,6 @@
 """Ingestion pipeline composition root."""
 
+from collections.abc import Iterator
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -43,8 +44,28 @@ class IngestionPipeline:
 
     def run(self, source_directory: Path) -> list[IngestionResult]:
         """Ingest all ``context_*.json`` files from one folder."""
-        # TODO(phase-implementation):
-        # For each discovered JSON file: parse one LegalDocument, clean its
-        # passage, extract structure, create parent-child chunks, and enrich
-        # metadata before returning results for indexing.
-        raise NotImplementedError
+        return list(self.iter_run(source_directory))
+
+    def iter_run(self, source_directory: Path) -> Iterator[IngestionResult]:
+        """Stream ingestion results to avoid retaining the complete corpus."""
+        files = self.discover_context_files(source_directory)
+        if not files:
+            raise ValueError(
+                f"No {CONTEXT_FILE_GLOB} files found in {source_directory}"
+            )
+        for path in files:
+            parser = self.parser_factory.get_parser(path)
+            document = parser.parse(path)
+            if not document.raw_text.strip():
+                continue
+            document = document.model_copy(
+                update={"cleaned_text": self.cleaner.clean(document.raw_text)}
+            )
+            document = self.structure_extractor.extract(document)
+            parents, children = self.chunker.chunk(document)
+            children = self.metadata_enricher.enrich(document, children)
+            yield IngestionResult(
+                document=document,
+                parent_chunks=parents,
+                child_chunks=children,
+            )

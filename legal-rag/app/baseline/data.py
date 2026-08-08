@@ -25,9 +25,7 @@ def load_question_records(path: Path, require_answers: bool) -> list[QuestionRec
         items: list[tuple[Any, Any]] = list(payload.items())
     elif isinstance(payload, list):
         items = [
-            (item.get("question_id"), item)
-            if isinstance(item, dict)
-            else (None, item)
+            (item.get("question_id"), item) if isinstance(item, dict) else (None, item)
             for item in payload
         ]
     else:

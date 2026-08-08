@@ -1,4 +1,4 @@
-"""BM25 retriever skeleton."""
+"""BM25 lexical retriever."""
 
 from app.domain.retrieval import RetrievalCandidate
 from app.indexing.lexical.bm25_index import BM25Index
@@ -17,6 +17,16 @@ class LexicalRetriever:
         allowed_ids: set[str] | None = None,
     ) -> list[RetrievalCandidate]:
         """Run BM25 search."""
-        # TODO(phase-implementation):
-        # Implement BM25 retrieval and domain candidate mapping.
-        raise NotImplementedError
+        results: list[RetrievalCandidate] = []
+        for child_id, score in self.index.search(query, top_n, allowed_ids):
+            child = self.repository.get_child(child_id)
+            if child is not None:
+                results.append(
+                    RetrievalCandidate(
+                        child_id=child_id,
+                        text=child.original_text,
+                        metadata=child.metadata,
+                        bm25_score=score,
+                    )
+                )
+        return results

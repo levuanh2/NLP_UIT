@@ -1,4 +1,4 @@
-"""Ingestion use-case service skeleton."""
+"""Corpus ingestion use-case service."""
 
 from pathlib import Path
 
@@ -10,6 +10,6 @@ class IngestionService:
         self.pipeline = pipeline
 
     def ingest(self, source_directory: Path) -> list[IngestionResult]:
-        # TODO(phase-implementation):
-        # Validate the context directory and invoke its ingestion pipeline.
-        raise NotImplementedError
+        if not source_directory.is_dir():
+            raise ValueError(f"Context source must be a directory: {source_directory}")
+        return self.pipeline.run(source_directory)

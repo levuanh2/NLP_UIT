@@ -1,5 +1,6 @@
 """Convert generated answers to the exact Subtask 2 schema."""
 
+import re
 from typing import Any
 
 from app.domain.generation import GeneratedAnswer
@@ -7,24 +8,18 @@ from app.domain.submission import SubmissionAnswer
 
 
 class SubmissionFormatter:
-    def format(
-        self, answers: list[GeneratedAnswer]
-    ) -> dict[str, SubmissionAnswer]:
+    def format(self, answers: list[GeneratedAnswer]) -> dict[str, SubmissionAnswer]:
         """Use question IDs as keys and retain only the answer field."""
         submission: dict[str, SubmissionAnswer] = {}
         for generated in answers:
             if generated.question_id in submission:
-                raise ValueError(
-                    f"Duplicate question_id: {generated.question_id}"
-                )
+                raise ValueError(f"Duplicate question_id: {generated.question_id}")
             submission[generated.question_id] = SubmissionAnswer(
-                answer=generated.answer
+                answer=_clean_answer(generated.answer)
             )
         return submission
 
-    def format_internal_results(
-        self, results: Any
-    ) -> dict[str, SubmissionAnswer]:
+    def format_internal_results(self, results: Any) -> dict[str, SubmissionAnswer]:
         """Strip internal fields and retain only question ID and answer."""
         submission: dict[str, SubmissionAnswer] = {}
 
@@ -56,5 +51,15 @@ class SubmissionFormatter:
             answer = record["answer"]
             if not isinstance(answer, str):
                 raise ValueError(f"answer for {question_id} must be a string.")
-            submission[question_id] = SubmissionAnswer(answer=answer)
+            submission[question_id] = SubmissionAnswer(answer=_clean_answer(answer))
         return submission
+
+
+def _clean_answer(answer: str) -> str:
+    """Remove internal evidence labels while preserving the legal prose."""
+    return re.sub(
+        r"\s*(?:\[|\()(?:Trích từ\s+)?E\d+(?:\]|\))",
+        "",
+        answer,
+        flags=re.IGNORECASE,
+    ).strip()

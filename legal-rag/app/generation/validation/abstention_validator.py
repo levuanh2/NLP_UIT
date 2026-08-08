@@ -1,4 +1,4 @@
-"""Insufficient-evidence abstention skeleton."""
+"""Insufficient-evidence abstention validation."""
 
 from app.domain.retrieval import LegalContext
 
@@ -8,6 +8,4 @@ class AbstentionValidator:
         self.abstention_message = abstention_message
 
     def should_abstain(self, context: LegalContext) -> bool:
-        # TODO(phase-implementation):
-        # Define evidence sufficiency policy without external knowledge.
-        raise NotImplementedError
+        return not context.evidences or not context.formatted_context.strip()

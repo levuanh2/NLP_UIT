@@ -68,6 +68,19 @@ def test_internal_result_formatter_strips_debug_fields() -> None:
     assert payload == {"answer": "Theo Điều 37..."}
 
 
+def test_formatter_removes_internal_evidence_labels() -> None:
+    answer = GeneratedAnswer(
+        question_id="1",
+        answer="Theo Điều 1 (E1), nội dung áp dụng. [Trích từ E2]",
+        grounded=True,
+        confidence=1.0,
+    )
+
+    payload = SubmissionFormatter().format([answer])["1"].model_dump()
+
+    assert payload == {"answer": "Theo Điều 1, nội dung áp dụng."}
+
+
 def test_internal_result_formatter_rejects_duplicate_ids() -> None:
     # Arrange
     internal_results = [

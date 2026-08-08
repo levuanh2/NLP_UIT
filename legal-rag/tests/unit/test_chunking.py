@@ -1,21 +1,29 @@
-"""Parent-child chunking test skeletons."""
+"""Parent-child chunking tests."""
 
-import pytest
-
-
-@pytest.mark.skip(reason="TODO(phase-implementation): implement parent chunking")
-def test_parent_child_chunker_creates_parent() -> None:
-    # Arrange / Act / Assert
-    pytest.fail("Enable after parent chunking is implemented.")
+from app.domain.documents import LegalDocument
+from app.ingestion.chunking.parent_child import ParentChildChunker
+from app.ingestion.structure.extractor import LegalStructureExtractor
 
 
-@pytest.mark.skip(reason="TODO(phase-implementation): implement child chunking")
-def test_parent_child_chunker_creates_child() -> None:
-    # Arrange / Act / Assert
-    pytest.fail("Enable after child chunking is implemented.")
+def test_parent_child_chunker_creates_stable_linked_chunks() -> None:
+    document = LegalDocument(
+        document_id=7,
+        document_name="Nghị định mẫu",
+        source_link="https://example.test/7",
+        raw_text="ĐIỀU 7. Xử phạt\n1. Hành vi vi phạm bị phạt tiền.",
+        cleaned_text="ĐIỀU 7. Xử phạt\n1. Hành vi vi phạm bị phạt tiền.",
+    )
+    document = LegalStructureExtractor().extract(document)
+    chunker = ParentChildChunker(100, 120, 40, 60)
 
+    parents, children = chunker.chunk(document)
+    repeated = chunker.chunk(document)
 
-@pytest.mark.skip(reason="TODO(phase-implementation): implement stable chunk links")
-def test_child_chunk_references_parent() -> None:
-    # Arrange / Act / Assert
-    pytest.fail("Enable after stable parent-child links are implemented.")
+    assert parents and children
+    assert {item.parent_id for item in children} <= {item.parent_id for item in parents}
+    assert [item.parent_id for item in parents] == [
+        item.parent_id for item in repeated[0]
+    ]
+    assert children[-1].metadata.document_name == "Nghị định mẫu"
+    assert children[0].article == "7"
+    assert children[0].clause == "1"

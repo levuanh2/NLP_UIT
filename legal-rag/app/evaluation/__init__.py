@@ -1,1 +1,1 @@
-"""Offline evaluation skeletons."""
+"""Offline evaluation package."""

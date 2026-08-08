@@ -64,15 +64,11 @@ def solve(
             raise ValueError("; ".join(validation.errors))
         SubmissionWriter().write(submission, submission_output)
         persisted = load_json_strict(submission_output)
-        persisted_validation = SubmissionValidator().validate(
-            persisted, expected_ids
-        )
+        persisted_validation = SubmissionValidator().validate(persisted, expected_ids)
         if not persisted_validation.valid:
             raise ValueError("; ".join(persisted_validation.errors))
     except (RuntimeError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
-    typer.echo(
-        f"Generated {len(results)} answers; submission: {submission_output}"
-    )
+    typer.echo(f"Generated {len(results)} answers; submission: {submission_output}")

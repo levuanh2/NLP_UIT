@@ -78,10 +78,9 @@ class Settings(BaseSettings):
 
     def paths(self) -> ProjectPaths:
         """Return all path settings as a typed value object."""
-        return ProjectPaths(**{
-            name: getattr(self, name)
-            for name in ProjectPaths.model_fields
-        })
+        return ProjectPaths(
+            **{name: getattr(self, name) for name in ProjectPaths.model_fields}
+        )
 
 
 @lru_cache(maxsize=1)

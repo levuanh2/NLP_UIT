@@ -103,9 +103,8 @@ class SemanticHybridAnswerMemoryRetriever:
             lexical = row_minmax(self._lexical.score_questions(batch))
             semantic = row_minmax(query_embeddings @ self._passages.T)
             scores = (
-                (1 - self.semantic_weight) * lexical
-                + self.semantic_weight * semantic
-            )
+                1 - self.semantic_weight
+            ) * lexical + self.semantic_weight * semantic
             for row in scores:
                 top_count = min(2, len(row))
                 top = np.argpartition(row, -top_count)[-top_count:]

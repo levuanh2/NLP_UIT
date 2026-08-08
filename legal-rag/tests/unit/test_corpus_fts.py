@@ -56,9 +56,7 @@ def test_index_searches_and_extracts_relevant_span(tmp_path: Path) -> None:
     evidences = LegalCorpusIndex(database_path).search(
         "Mức phạt vi phạm nghĩa vụ trả lương?"
     )
-    answer = extract_answer_span(
-        "Mức phạt vi phạm nghĩa vụ trả lương?", evidences
-    )
+    answer = extract_answer_span("Mức phạt vi phạm nghĩa vụ trả lương?", evidences)
 
     assert documents == 1
     assert chunks >= 1

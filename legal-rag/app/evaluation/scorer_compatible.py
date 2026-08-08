@@ -57,9 +57,7 @@ def meteor_score_offline(reference: str, prediction: str) -> float:
     )
 
 
-def score_answer_pairs(
-    references: list[str], predictions: list[str]
-) -> LegalQAScore:
+def score_answer_pairs(references: list[str], predictions: list[str]) -> LegalQAScore:
     """Return mean METEOR and ROUGE-L for aligned answers."""
     if len(references) != len(predictions):
         raise ValueError("Reference and prediction counts do not match.")

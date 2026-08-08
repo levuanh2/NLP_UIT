@@ -24,6 +24,20 @@ class BaseVectorStore(ABC):
     ) -> list[tuple[str, float]]:
         """Search vectors."""
 
+    def search_many(
+        self,
+        query_vectors: np.ndarray,
+        top_k: int,
+        allowed_ids: list[set[str] | None],
+    ) -> list[list[tuple[str, float]]]:
+        """Search multiple vectors; implementations may override for batching."""
+        if len(query_vectors) != len(allowed_ids):
+            raise ValueError("Query vectors and allowed-ID sets must be aligned.")
+        return [
+            self.search(vector, top_k, allowed)
+            for vector, allowed in zip(query_vectors, allowed_ids, strict=True)
+        ]
+
     @abstractmethod
     def save(self, path: Path) -> None:
         """Persist vector index."""

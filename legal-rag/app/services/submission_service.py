@@ -1,4 +1,4 @@
-"""Submission use-case service skeleton."""
+"""Submission formatting and validation service."""
 
 from pathlib import Path
 

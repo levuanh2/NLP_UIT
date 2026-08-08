@@ -1,21 +1,40 @@
-"""Legal hierarchy extraction test skeletons."""
+"""Legal hierarchy extraction tests."""
 
-import pytest
+from app.domain.documents import LegalDocument
+from app.ingestion.structure.extractor import LegalStructureExtractor
+from app.ingestion.structure.validator import LegalStructureValidator
 
 
-@pytest.mark.skip(reason="TODO(phase-implementation): implement chapter extraction")
+def _document() -> LegalDocument:
+    text = (
+        "CHƯƠNG I\nMỤC 1\nĐIỀU 1. Phạm vi\n"
+        "1. Nội dung khoản một.\na) Nội dung điểm a.\n"
+        "ĐIỀU 2. Trách nhiệm\n1. Nội dung trách nhiệm."
+    )
+    return LegalDocument(
+        document_id=1,
+        document_name="Luật mẫu",
+        source_link="https://example.test",
+        raw_text=text,
+        cleaned_text=text,
+    )
+
+
 def test_structure_extractor_extracts_chapter() -> None:
-    # Arrange / Act / Assert
-    pytest.fail("Enable after chapter extraction is implemented.")
+    result = LegalStructureExtractor().extract(_document())
+    assert result.structure is not None
+    assert result.structure.chapters[0].title == "CHƯƠNG I"
 
 
-@pytest.mark.skip(reason="TODO(phase-implementation): implement article extraction")
-def test_structure_extractor_extracts_article() -> None:
-    # Arrange / Act / Assert
-    pytest.fail("Enable after article extraction is implemented.")
-
-
-@pytest.mark.skip(reason="TODO(phase-implementation): implement clause extraction")
-def test_structure_extractor_extracts_clause() -> None:
-    # Arrange / Act / Assert
-    pytest.fail("Enable after clause extraction is implemented.")
+def test_structure_extractor_extracts_article_and_clause() -> None:
+    result = LegalStructureExtractor().extract(_document())
+    articles = [
+        article
+        for chapter in result.structure.chapters  # type: ignore[union-attr]
+        for section in chapter.sections
+        for article in section.articles
+    ]
+    assert [item.article_number for item in articles] == ["0", "1", "2"]
+    assert articles[1].clauses[0].clause_number == "1"
+    assert articles[1].clauses[0].points[0].point_label == "a"
+    assert LegalStructureValidator().validate(result) == []

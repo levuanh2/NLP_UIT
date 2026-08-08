@@ -18,7 +18,7 @@ class JsonContextRecord(BaseModel):
     id: int
     name: str | None = Field(default=None, min_length=1)
     link: str = Field(min_length=1)
-    passage: str = Field(min_length=1)
+    passage: str
 
 
 class JsonContextParser(BaseDocumentParser):

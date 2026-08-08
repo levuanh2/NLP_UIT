@@ -18,6 +18,12 @@ class BaseEmbeddingModel(ABC):
     def embed_query(self, query: str) -> np.ndarray:
         """Embed one legal query."""
 
+    def embed_queries(self, queries: list[str]) -> np.ndarray:
+        """Embed multiple queries; implementations may override for batching."""
+        if not queries:
+            return np.empty((0, self.dimension()), dtype=np.float32)
+        return np.stack([self.embed_query(query) for query in queries])
+
     @abstractmethod
     def dimension(self) -> int:
         """Return embedding vector dimension."""

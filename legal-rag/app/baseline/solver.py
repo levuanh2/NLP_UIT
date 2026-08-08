@@ -69,11 +69,7 @@ def solve_with_answer_memory(
             "answer": answer,
             "retrieval": asdict(match),
             "corpus_evidence": [asdict(evidence) for evidence in evidences],
-            "method": (
-                "corpus_fts_extractive"
-                if use_corpus
-                else method
-            ),
+            "method": ("corpus_fts_extractive" if use_corpus else method),
             "confidence": _confidence_label(match.score, match.score_margin),
         }
         results.append(result)

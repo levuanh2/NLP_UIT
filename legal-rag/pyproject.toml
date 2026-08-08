@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "legal-rag"
 version = "0.1.0"
-description = "Vietnamese Legal RAG scaffold for Subtask 2"
+description = "End-to-end Vietnamese Legal RAG pipeline for Subtask 2"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -18,7 +18,10 @@ dependencies = [
     "nltk",
     "faiss-cpu",
     "sentence-transformers",
+    "sentencepiece",
+    "protobuf",
     "transformers",
+    "huggingface-hub",
     "torch",
     "rank-bm25",
     "typer",

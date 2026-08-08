@@ -5,6 +5,8 @@ from pathlib import Path
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.indexing.metadata_store.models import Base
+
 
 class Database:
     def __init__(self, database_path: Path) -> None:
@@ -17,6 +19,7 @@ class Database:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self._engine = create_engine(f"sqlite:///{self.database_path}")
         self._session_factory = sessionmaker(bind=self._engine)
+        Base.metadata.create_all(self._engine)
 
     def session(self) -> Session:
         if self._session_factory is None:

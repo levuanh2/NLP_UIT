@@ -34,6 +34,21 @@ class IndexingPipeline:
         parent_chunks: list[ParentChunk],
     ) -> IndexingResult:
         """Embed children, build vector/BM25 indexes, and persist metadata."""
-        # TODO(phase-implementation):
-        # Implement indexing orchestration and atomic artifact publishing.
-        raise NotImplementedError
+        child_ids = [item.child_id for item in child_chunks]
+        if len(set(child_ids)) != len(child_ids):
+            raise ValueError("Child chunk IDs must be unique before indexing.")
+        texts = [item.embedding_text or item.original_text for item in child_chunks]
+        self.embedding_model.load()
+        dimension = self.embedding_model.dimension()
+        vectors = self.embedding_model.embed_documents(texts)
+        if vectors.shape != (len(child_chunks), dimension):
+            raise ValueError("Embedding output shape does not match child chunks.")
+        self.vector_store.create(dimension)
+        self.vector_store.add(vectors, child_ids)
+        self.bm25_index.build([item.original_text for item in child_chunks], child_ids)
+        self.metadata_repository.save_chunks(parent_chunks, child_chunks)
+        return IndexingResult(
+            child_count=len(child_chunks),
+            parent_count=len(parent_chunks),
+            embedding_dimension=dimension,
+        )

@@ -1,11 +1,13 @@
 """SQLite FTS5 index for the organizer-provided legal corpus ZIP."""
 
+import hashlib
 import json
 import re
 import sqlite3
+import tempfile
 import unicodedata
 import zipfile
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -60,6 +62,10 @@ class CorpusEvidence:
     chunk_index: int
     text: str
     score: float
+    chunk_id: str = ""
+    article: str | None = None
+    semantic_score: float | None = None
+    hybrid_score: float | None = None
 
 
 class LegalCorpusIndex:
@@ -79,51 +85,114 @@ class LegalCorpusIndex:
             raise FileNotFoundError(f"Corpus ZIP does not exist: {zip_path}")
         if target_words <= 0 or not 0 <= overlap_words < target_words:
             raise ValueError("Invalid corpus chunk size or overlap.")
+        with zipfile.ZipFile(zip_path) as archive:
+            entries = [
+                entry
+                for entry in sorted(archive.infolist(), key=lambda item: item.filename)
+                if entry.filename.lower().endswith(".json")
+            ]
+
+            def records() -> Iterator[Any]:
+                for entry in entries:
+                    with archive.open(entry) as stream:
+                        yield json.load(stream)
+
+            return self._build(records(), target_words, overlap_words, str(zip_path))
+
+    def build_from_directory(
+        self,
+        source_directory: Path,
+        target_words: int = 350,
+        overlap_words: int = 60,
+    ) -> tuple[int, int]:
+        """Build from all context JSON files without reading question data."""
+        if not source_directory.is_dir():
+            raise FileNotFoundError(
+                f"Corpus directory does not exist: {source_directory}"
+            )
+        paths = sorted(source_directory.glob("context_*.json"))
+        if not paths:
+            raise ValueError(f"No context_*.json files found in {source_directory}")
+
+        def records() -> Iterator[Any]:
+            for path in paths:
+                with path.open(encoding="utf-8") as stream:
+                    yield json.load(stream)
+
+        return self._build(
+            records(), target_words, overlap_words, str(source_directory)
+        )
+
+    def _build(
+        self,
+        records: Iterable[Any],
+        target_words: int,
+        overlap_words: int,
+        source: str,
+    ) -> tuple[int, int]:
+        if target_words <= 0 or not 0 <= overlap_words < target_words:
+            raise ValueError("Invalid corpus chunk size or overlap.")
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.database_path)
+        temporary = tempfile.NamedTemporaryFile(
+            prefix=f".{self.database_path.name}.",
+            suffix=".building",
+            dir=self.database_path.parent,
+            delete=False,
+        )
+        temporary_path = Path(temporary.name)
+        temporary.close()
+        connection = sqlite3.connect(temporary_path)
         try:
             self._initialize(connection)
             document_count = 0
             chunk_count = 0
-            with zipfile.ZipFile(zip_path) as archive, connection:
-                for entry in archive.infolist():
-                    if not entry.filename.lower().endswith(".json"):
+            with connection:
+                for record in records:
+                    validated = _validate_context_record(record)
+                    if validated is None:
                         continue
-                    with archive.open(entry) as stream:
-                        record: Any = json.load(stream)
-                    if not isinstance(record, dict):
-                        continue
-                    document_id = record.get("id")
-                    passage = record.get("passage")
-                    if not isinstance(document_id, int) or not isinstance(passage, str):
-                        continue
-                    if not passage.strip():
-                        continue
-                    name = record.get("name")
-                    link = record.get("link")
-                    document_name = name if isinstance(name, str) else ""
-                    source_link = link if isinstance(link, str) else ""
+                    document_id, document_name, source_link, passage = validated
                     document_count += 1
-                    for chunk_index, text in enumerate(
-                        chunk_text(passage, target_words, overlap_words)
+                    for chunk_index, (article, text) in enumerate(
+                        structure_aware_chunks(passage, target_words, overlap_words)
                     ):
+                        chunk_id = stable_chunk_id(document_id, chunk_index, text)
                         connection.execute(
                             "INSERT INTO chunks(document_id, document_name, "
-                            "source_link, chunk_index, text) VALUES (?, ?, ?, ?, ?)",
+                            "source_link, chunk_id, chunk_index, article, text) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?)",
                             (
                                 document_id,
                                 document_name,
                                 source_link,
+                                chunk_id,
                                 chunk_index,
+                                article,
                                 text,
                             ),
                         )
                         chunk_count += 1
-            connection.execute("INSERT INTO chunks(chunks) VALUES('optimize')")
-            connection.commit()
-            return document_count, chunk_count
-        finally:
+                connection.execute("INSERT INTO chunks(chunks) VALUES('optimize')")
+                connection.execute(
+                    "INSERT INTO manifest(schema_version, source, target_words, "
+                    "overlap_words, document_count, chunk_count) "
+                    "VALUES(?, ?, ?, ?, ?, ?)",
+                    (
+                        2,
+                        source,
+                        target_words,
+                        overlap_words,
+                        document_count,
+                        chunk_count,
+                    ),
+                )
+        except Exception:
             connection.close()
+            temporary_path.unlink(missing_ok=True)
+            raise
+        connection.close()
+        temporary_path.replace(self.database_path)
+        return document_count, chunk_count
 
     def search(self, query: str, limit: int = 5) -> list[CorpusEvidence]:
         """Retrieve the best legal chunks using Unicode-aware BM25."""
@@ -134,24 +203,18 @@ class LegalCorpusIndex:
             return []
         connection = sqlite3.connect(self.database_path)
         try:
-            ranked_terms = self._rank_terms_by_document_frequency(
-                connection, terms
-            )
+            ranked_terms = self._rank_terms_by_document_frequency(connection, terms)
             rows: list[tuple[Any, ...]] = []
             for term_count in (4, 3, 2, 1):
                 selected = ranked_terms[:term_count]
                 if len(selected) < term_count:
                     continue
-                match_query = " AND ".join(
-                    f'"{term}"' for term in selected
-                )
+                match_query = " AND ".join(f'"{term}"' for term in selected)
                 rows = self._search_rows(connection, match_query, limit)
                 if rows:
                     break
             if not rows:
-                match_query = " OR ".join(
-                    f'"{term}"' for term in ranked_terms[:4]
-                )
+                match_query = " OR ".join(f'"{term}"' for term in ranked_terms[:4])
                 rows = self._search_rows(connection, match_query, limit)
         finally:
             connection.close()
@@ -160,9 +223,11 @@ class LegalCorpusIndex:
                 document_id=int(row[0]),
                 document_name=str(row[1]),
                 source_link=str(row[2]),
-                chunk_index=int(row[3]),
-                text=str(row[4]),
-                score=float(-row[5]),
+                chunk_id=str(row[3]),
+                chunk_index=int(row[4]),
+                article=str(row[5]) if row[5] else None,
+                text=str(row[6]),
+                score=float(-row[7]),
             )
             for row in rows
         ]
@@ -174,8 +239,9 @@ class LegalCorpusIndex:
         limit: int,
     ) -> list[tuple[Any, ...]]:
         return connection.execute(
-            "SELECT document_id, document_name, source_link, chunk_index, "
-            "text, bm25(chunks, 0.0, 0.0, 0.0, 0.0, 1.0) AS rank "
+            "SELECT document_id, document_name, source_link, chunk_id, "
+            "chunk_index, article, text, "
+            "bm25(chunks, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0) AS rank "
             "FROM chunks WHERE chunks MATCH ? ORDER BY rank LIMIT ?",
             (match_query, limit),
         ).fetchall()
@@ -205,14 +271,22 @@ class LegalCorpusIndex:
     def _initialize(connection: sqlite3.Connection) -> None:
         connection.execute("DROP TABLE IF EXISTS chunks_vocab")
         connection.execute("DROP TABLE IF EXISTS chunks")
+        connection.execute("DROP TABLE IF EXISTS manifest")
         connection.execute(
             "CREATE VIRTUAL TABLE chunks USING fts5("
             "document_id UNINDEXED, document_name, source_link UNINDEXED, "
-            "chunk_index UNINDEXED, text, "
+            "chunk_id UNINDEXED, chunk_index UNINDEXED, article, text, "
             "tokenize='unicode61 remove_diacritics 2')"
         )
         connection.execute(
             "CREATE VIRTUAL TABLE chunks_vocab USING fts5vocab(chunks, 'row')"
+        )
+        connection.execute(
+            "CREATE TABLE manifest(schema_version INTEGER NOT NULL, "
+            "source TEXT NOT NULL, "
+            "target_words INTEGER NOT NULL, overlap_words INTEGER NOT NULL, "
+            "document_count INTEGER NOT NULL, chunk_count INTEGER NOT NULL, "
+            "created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
         )
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=NORMAL")
@@ -263,6 +337,61 @@ def chunk_text(
         yield " ".join(chunk)
         if start + target_words >= len(words):
             break
+
+
+_ARTICLE_BOUNDARY = re.compile(r"(?im)(?=^\s*(?:điều|article)\s+\d+[a-zđ]?(?:[.\s:]))")
+_ARTICLE_LABEL = re.compile(r"(?i)^\s*((?:điều|article)\s+\d+[a-zđ]?)")
+
+
+def structure_aware_chunks(
+    text: str,
+    target_words: int = 350,
+    overlap_words: int = 60,
+) -> Iterator[tuple[str | None, str]]:
+    """Keep legal articles together when possible and window oversized articles."""
+    cleaned = clean_legal_text(text)
+    sections = [
+        part.strip() for part in _ARTICLE_BOUNDARY.split(cleaned) if part.strip()
+    ]
+    for section in sections:
+        match = _ARTICLE_LABEL.match(section)
+        article = match.group(1) if match else None
+        for chunk in chunk_text(section, target_words, overlap_words):
+            yield article, chunk
+
+
+def clean_legal_text(text: str) -> str:
+    """Conservatively normalize whitespace while preserving legal line markers."""
+    normalized = unicodedata.normalize("NFC", text).replace("\u00a0", " ")
+    normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in normalized.split("\n")]
+    return "\n".join(line for line in lines if line).strip()
+
+
+def stable_chunk_id(document_id: int, chunk_index: int, text: str) -> str:
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+    return f"doc-{document_id}:chunk-{chunk_index}:{digest}"
+
+
+def _validate_context_record(
+    record: Any,
+) -> tuple[int, str, str, str] | None:
+    if not isinstance(record, dict):
+        return None
+    document_id = record.get("id")
+    passage = record.get("passage")
+    if not isinstance(document_id, int) or not isinstance(passage, str):
+        return None
+    if not passage.strip():
+        return None
+    name = record.get("name")
+    link = record.get("link")
+    return (
+        document_id,
+        name if isinstance(name, str) else "",
+        link if isinstance(link, str) else "",
+        passage,
+    )
 
 
 def extract_answer_span(

@@ -113,17 +113,13 @@ class AnswerMemoryRetriever:
             scores = self.score_questions(batch)
 
             for row_index, question in enumerate(batch):
-                exact_index = self._exact_matches.get(
-                    self.normalize_question(question)
-                )
+                exact_index = self._exact_matches.get(self.normalize_question(question))
                 row = scores[row_index]
                 if exact_index is not None:
                     best_index = exact_index
                     best_score = 1.0
                     second_score = (
-                        float(np.partition(row, -2)[-2])
-                        if len(row) > 1
-                        else 0.0
+                        float(np.partition(row, -2)[-2]) if len(row) > 1 else 0.0
                     )
                 else:
                     top_count = min(2, len(row))
@@ -155,9 +151,8 @@ class AnswerMemoryRetriever:
         answer_queries = self._answer_vectorizer.transform(questions)
         word_scores = word_queries @ self._word_matrix.T
         char_scores = char_queries @ self._char_matrix.T
-        question_scores = (
-            word_scores.multiply(self.word_weight)
-            + char_scores.multiply(1 - self.word_weight)
+        question_scores = word_scores.multiply(self.word_weight) + char_scores.multiply(
+            1 - self.word_weight
         )
         answer_scores = answer_queries @ self._answer_matrix.T
         return (

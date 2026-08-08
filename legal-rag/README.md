@@ -2,10 +2,12 @@
 
 ## 1. Project overview
 
-This repository contains the project scaffold for an offline Vietnamese legal
-retrieval-augmented generation system. It defines contracts, domain models,
-configuration, command-line entrypoints, submission tooling, and test scaffolding.
-It does not yet implement the RAG algorithms or run model inference.
+This repository contains an offline Vietnamese legal RAG system. Its private-test-safe
+path cleans the organizer corpus, extracts legal hierarchy, creates stable parent-child
+chunks, persists SQLite metadata, builds BM25 and normalized dense FAISS indexes,
+performs metadata-aware hybrid retrieval with RRF and Vietnamese reranking, expands
+parent evidence, generates grounded answers with local Vi-Qwen, validates provenance,
+and writes the exact submission schema. No question or answer file is indexed.
 
 ## 2. Architecture
 
@@ -28,7 +30,7 @@ data/         Raw, processed, question, and output data
 storage/      FAISS, BM25, and SQLite artifacts
 models/       Local model files (not committed)
 scripts/      Explicit command wrappers
-tests/        Unit, integration, and fixture scaffolding
+tests/        Unit, integration, and fixture coverage
 ```
 
 ## 4. Requirements
@@ -48,7 +50,7 @@ python -m pip install -e .
 
 ## 6. Environment configuration
 
-Copy `.env.example` to `.env` and adjust local paths/devices. The scaffold already
+Copy `.env.example` to `.env` and adjust local paths/devices. The repository already
 creates a secret-free `.env` when absent. Model names, paths, top-k values, and
 generation settings are configuration—not business-logic constants.
 
@@ -60,9 +62,9 @@ The intended local models are configured as:
 - `bqbbao6/vietnamese-legal-embedding`
 - `AITeamVN/Vietnamese_Reranker`
 
-`scripts/download_models.py` is a skeleton. It does not download anything in this
-phase. Future downloads must be explicit and stored under `MODEL_DIR`; runtime loaders
-must honor `MODEL_LOCAL_FILES_ONLY=true`.
+Download all three snapshots explicitly with `python scripts/download_models.py`, or
+use `--only embedding`, `--only reranker`, or `--only llm`. Files are stored under
+`MODEL_DIR`; runtime loaders honor `MODEL_LOCAL_FILES_ONLY=true`.
 
 ## 8. Data directory
 
@@ -71,47 +73,104 @@ data/
 ├── corpus/      Competition context_*.json files
 ├── questions/   public_test.json or private_test.json
 ├── outputs/     submission.json, logs, and evaluation results
-└── cache/       Optional future temporary cache
+└── cache/       Deterministic parent/child JSONL cache and build manifest
 ```
 
 Do not commit competition data. Copy all organizer-provided `context_*.json` files
-into `data/corpus/`; each usable file must contain `id`, `link`, and a nonempty
-`passage`. The organizer corpus may omit `name`; it is treated as an empty document
-name. Empty passages are skipped by the corpus index.
+into `data/corpus/`; each file must contain `id`, `name`, `link`, and `passage`.
 Copy the organizer-provided question file into `data/questions/`. Only `.gitkeep`
 files are tracked in these directories.
 
 ## 9. Ingestion
 
 ```bash
-python -m app.cli.main ingest
+python -m app.cli.main ingest \
+  --source data/corpus \
+  --output storage/sqlite/legal.db
 ```
 
-The command defaults to `CORPUS_DATA_DIR` (`data/corpus/`), automatically scans every
-`context_*.json`, and passes each file individually to `JsonContextParser`. Users do
-not provide JSON files one by one. Cleaning, structure extraction, chunking,
-enrichment, index-building orchestration, and persistence remain TODO. PDF, DOCX,
-TXT, and OCR inputs are not supported.
+The command defaults to `CORPUS_DATA_DIR` (`data/corpus/`), scans every
+`context_*.json` in deterministic order, normalizes Unicode/whitespace, preserves
+legal article boundaries where available, windows oversized articles with overlap,
+creates deterministic chunk IDs, and persists content plus document metadata and a
+build manifest. It never reads `train.json`, public questions, or answer keys.
 
 ## 10. Indexing
 
 ```bash
-python -m app.cli.main index
+python -m app.cli.main index \
+  --cache data/cache \
+  --embedding-model models/vietnamese-legal-embedding \
+  --faiss-output storage/faiss/legal.index \
+  --bm25-output storage/bm25/legal.db \
+  --metadata-output storage/sqlite/legal.db \
+  --rebuild
 ```
 
-This separate scaffold command uses `data/cache/` by default. Embedding, FAISS, BM25,
-and metadata persistence remain TODO; the final ingestion workflow will invoke index
-building after processing the complete corpus.
+This embeds every cached child with the required `passage:` prefix, builds a cosine
+FAISS index, a Unicode-aware BM25 index, and transactional parent/child metadata.
+`--max-children` exists only for diagnostic smoke tests; omit it for competition use.
+Dense inputs are capped at 128 model tokens for bounded 4 GB GPU memory; BM25 and
+parent evidence retain the complete legal text.
 
 ## 11. Ask one question
 
+Full hybrid RAG:
+
 ```bash
-python -m app.cli.main ask "Điều kiện thành lập doanh nghiệp là gì?" --question-id 147194
+python -m app.cli.main ask-rag \
+  "Điều kiện thành lập doanh nghiệp là gì?" \
+  --question-id 147194
 ```
 
-Retrieval and local generation are not wired in the scaffold phase.
+The command loads only local artifacts, runs dense/BM25 retrieval, RRF, reranking,
+parent expansion, Vi-Qwen generation, and grounding validation.
+
+Corpus-extractive diagnostic fallback:
+
+```bash
+python -m app.cli.main ask "Điều kiện thành lập doanh nghiệp là gì?" \
+  --question-id 147194 \
+  --corpus-index storage/sqlite/legal.db
+```
+
+The returned JSON includes a corpus-grounded extractive answer and internal evidence
+diagnostics. The answer is retrieved only from chunks stored during ingestion.
 
 ## 12. Generate submission.json
+
+### Full public/private RAG path
+
+```bash
+python -m app.cli.main solve-rag \
+  --questions data/questions/private-official.json \
+  --internal-output data/outputs/internal-results.json \
+  --submission-output data/outputs/submission.json
+```
+
+The batch command checkpoints `internal-results.json` after every question and resumes
+by default. Public and private files follow the identical path and are never used while
+building chunks or indexes.
+
+### Corpus-only public/private test path
+
+Use the same command for public and private questions; only the question path changes:
+
+```bash
+python -m app.cli.main solve-corpus \
+  --questions data/questions/public-official.json \
+  --corpus-index storage/sqlite/legal.db \
+  --semantic-model models/vietnamese-legal-embedding \
+  --semantic-weight 0.75
+```
+
+This writes evidence-rich diagnostics to `data/outputs/internal-results.json` and
+the scorer payload to `data/outputs/submission.json`. The latter contains exactly
+`{question_id: {"answer": "..."}}`. Public questions are used only as queries and
+for local evaluation. They are never indexed or used to choose an answer.
+The optional semantic reranker embeds only the unseen query and retrieved corpus
+chunks with the model's required `query:`/`passage:` prefixes; it never embeds or
+retrieves from the training answer memory.
 
 ### Reproducible answer-memory baseline
 
@@ -178,7 +237,7 @@ Across five additional 200-example splits, weight 0.75 had the best mean METEOR
 among 0.00, 0.25, 0.50, 0.75, and 1.00. Lexical-only mode remains available by
 omitting the two semantic path options.
 
-### Optional legal-corpus evidence index
+### ZIP alternative for the legal-corpus evidence index
 
 Build the Unicode-aware SQLite FTS5 index with:
 
@@ -188,10 +247,10 @@ python -m app.cli.main build-corpus-index \
   --output storage/sqlite/legal_corpus_fts.db
 ```
 
-The index is intended to supply evidence to a future grounded LLM. Directly
-replacing expert-memory answers with extracted corpus spans reduced holdout METEOR
-in testing, so corpus fallback is disabled by default. It can be explicitly
-experimented with using `--corpus-index` and `--memory-threshold`.
+This produces the same persisted chunk schema directly from the organizer ZIP. Use
+`solve-corpus` to query it without any dependency on training questions or answers.
+The older `solve` command can also use it as an experimental fallback to answer
+memory through `--corpus-index` and `--memory-threshold`.
 
 ### Convert existing internal RAG results
 
@@ -211,16 +270,16 @@ Before writing, the command rejects malformed UTF-8/JSON, duplicate JSON keys,
 duplicate question IDs, missing or unexpected IDs, empty/non-string answers, and
 extra submission fields. The output must be named `submission.json`; it is written
 as UTF-8 with Vietnamese characters preserved and then loaded and validated again.
-The CLI never creates fake answers. Question answering orchestration remains TODO.
+The CLI never creates fake answers.
 
 Complete usage sequence:
 
 1. Copy all organizer `context_*.json` files into `data/corpus/`.
 2. Copy `public_test.json` or `private_test.json` into `data/questions/`.
 3. Run `python -m app.cli.main ingest` to process the entire corpus and build indexes.
-4. Save real RAG results to `data/outputs/internal-results.json`.
-5. Run `python -m app.cli.main submit --questions data/questions/public_test.json --answers data/outputs/internal-results.json`.
-6. Read the result from `data/outputs/submission.json`.
+4. Run `python -m app.cli.main index --rebuild` and wait for the full-corpus artifacts.
+5. Run `python -m app.cli.main solve-rag --questions data/questions/private-official.json`.
+6. Validate and read `data/outputs/submission.json`.
 
 ## 13. Validate submission.json
 
@@ -239,44 +298,24 @@ ruff check .
 pytest
 ```
 
-Tests for implemented configuration and submission utilities run now. Tests for
-algorithm skeletons are explicitly skipped with implementation-phase TODO reasons.
+The suite covers ingestion hierarchy, stable chunk links, persistence orchestration,
+metadata filtering, RRF, parent expansion, grounded generation, and submission output.
 
 ## 15. Current implementation status
 
-Current phase: the strict submission pipeline, scorer-compatible evaluation,
-TF-IDF expert-answer memory, legal-corpus FTS index, and optional Vietnamese legal
-semantic answer-memory ensemble are runnable. The broader generative RAG modules
-below remain scaffold work.
+Implemented: legal cleaning and hierarchy extraction; stable parent-child chunking;
+JSONL cache; SQLite metadata; normalized local embedding; FAISS; BM25; explicit legal
+reference filtering with empty-result fallback; dense/lexical retrieval; RRF; local
+Vietnamese reranking; parent expansion; bounded prompts; local Vi-Qwen inference;
+citation, grounding, and abstention validation; resumable batch generation; offline
+evaluation; and strict UTF-8 submission formatting.
 
-The following components are currently interfaces/skeletons and contain TODOs:
+The TF-IDF/semantic answer-memory commands remain reproducible benchmarks only. They
+are not the recommended private-test path because they retrieve training answers.
 
-- Legal structure extraction from JSON passage text
-- Parent-child chunking
-- Metadata extraction
-- Full-corpus FAISS/BM25 indexing
-- Full-corpus dense and hybrid retrieval
-- RRF
-- Reranking
-- Parent context expansion
-- LLM inference
-- Grounding validation
-- Citation validation
-- Evaluation
+## 16. Operational notes
 
-Implemented in this phase: typed domain models, environment/YAML configuration
-loading, centralized paths, exception/logging utilities, competition JSON context
-validation/mapping and parser selection, exact
-submission formatting, basic strict submission validation, UTF-8 JSON writing, and
-CLI argument/file validation.
-
-## 16. TODO roadmap
-
-1. Implement and validate conservative Vietnamese legal parsing and cleaning.
-2. Implement stable hierarchy-aware parent-child chunk identifiers.
-3. Add transactional SQLite persistence and reproducible local indexes.
-4. Implement confidence-gated filtering with empty-result full-corpus fallback.
-5. Implement dense/BM25 retrieval, RRF, reranking, and context expansion.
-6. Implement local model lifecycle and grounded answer generation.
-7. Add citation/grounding safeguards and offline evaluation.
-8. Run end-to-end tests with real local corpus and model artifacts.
+- Model and competition artifacts are ignored by Git.
+- Full-corpus embedding time depends heavily on CUDA availability; CPU-only builds can
+  take many hours. A diagnostic subset is not a valid competition index.
+- The aggregate configured model size remains below four billion parameters.

@@ -1,21 +1,31 @@
-"""Metadata filtering test skeletons."""
+"""Confidence-gated metadata filtering tests."""
 
-import pytest
+from app.domain.queries import QueryMetadata
+from app.retrieval.filters.metadata_filter import MetadataFilter
 
 
-@pytest.mark.skip(reason="TODO(phase-implementation): implement confidence filtering")
+class _Repository:
+    def __init__(self, values: set[str]) -> None:
+        self.values = values
+
+    def filter_child_ids(self, metadata: QueryMetadata) -> set[str]:
+        del metadata
+        return self.values
+
+
 def test_metadata_filter_applies_when_confident() -> None:
-    # Arrange / Act / Assert
-    pytest.fail("Enable after confidence-gated filtering is implemented.")
+    value = QueryMetadata(article="7", confidence=0.9)
+    filtering = MetadataFilter(_Repository({"a"}), True, 0.8, True)  # type: ignore[arg-type]
+    assert filtering.allowed_ids(value) == {"a"}
 
 
-@pytest.mark.skip(reason="TODO(phase-implementation): implement confidence filtering")
 def test_metadata_filter_skips_when_low_confidence() -> None:
-    # Arrange / Act / Assert
-    pytest.fail("Enable after low-confidence behavior is implemented.")
+    value = QueryMetadata(article="7", confidence=0.5)
+    filtering = MetadataFilter(_Repository({"a"}), True, 0.8, True)  # type: ignore[arg-type]
+    assert filtering.allowed_ids(value) is None
 
 
-@pytest.mark.skip(reason="TODO(phase-implementation): implement empty filter fallback")
 def test_metadata_filter_falls_back_to_full_corpus() -> None:
-    # Arrange / Act / Assert
-    pytest.fail("Enable after full-corpus fallback is implemented.")
+    value = QueryMetadata(article="7", confidence=0.9)
+    filtering = MetadataFilter(_Repository(set()), True, 0.8, True)  # type: ignore[arg-type]
+    assert filtering.allowed_ids(value) is None

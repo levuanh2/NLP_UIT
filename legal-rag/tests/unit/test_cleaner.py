@@ -1,17 +1,11 @@
-"""Legal cleaner test skeleton."""
-
-import pytest
+"""Legal cleaner tests."""
 
 from app.ingestion.cleaners.legal_text_cleaner import LegalTextCleaner
 
 
-@pytest.mark.skip(reason="TODO(phase-implementation): implement legal cleaning")
 def test_legal_text_cleaner_preserves_article_structure() -> None:
-    # Arrange
-    text = "Điều 1. Phạm vi điều chỉnh\n\nNội dung."
+    text = "Điều 1.  Phạm vi điều chỉnh\r\n\r\n\r\nNội dung."
 
-    # Act
     cleaned = LegalTextCleaner().clean(text)
 
-    # Assert
-    assert "Điều 1." in cleaned
+    assert cleaned == "Điều 1. Phạm vi điều chỉnh\n\nNội dung."
