@@ -9,8 +9,18 @@ class BaseLLMGenerator(ABC):
         """Load local LLM."""
 
     @abstractmethod
-    def generate(self, prompt: str) -> str:
+    def generate(
+        self,
+        prompt: str,
+        *,
+        max_new_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> str:
         """Generate legal answer."""
+
+    def count_tokens(self, text: str) -> int:
+        """Count prompt tokens; test adapters may use this conservative fallback."""
+        return len(text.split())
 
     @abstractmethod
     def unload(self) -> None:

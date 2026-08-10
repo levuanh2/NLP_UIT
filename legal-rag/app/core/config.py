@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.exceptions import ConfigurationError
@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     bm25_dir: Path = Path("./storage/bm25")
     sqlite_dir: Path = Path("./storage/sqlite")
     sqlite_database_path: Path = Path("./storage/sqlite/legal.db")
+    index_root_dir: Path = Path("./storage/indexes")
+    checkpoint_dir: Path = Path("./storage/checkpoints")
     config_dir: Path = Path("./configs")
 
     base_config_path: Path = Path("./configs/base.yaml")
@@ -59,29 +61,75 @@ class Settings(BaseSettings):
     metadata_filter_enabled: bool = True
     metadata_filter_min_confidence: float = Field(default=0.8, ge=0, le=1)
     metadata_filter_fallback_to_full_corpus: bool = True
-    dense_top_n: int = Field(default=20, gt=0)
-    bm25_top_n: int = Field(default=20, gt=0)
-    fusion_top_n: int = Field(default=30, gt=0)
-    rerank_enabled: bool = True
-    rerank_top_k: int = Field(default=5, gt=0)
+    dense_top_n: int = Field(
+        default=20, gt=0, validation_alias=AliasChoices("DENSE_TOP_K", "DENSE_TOP_N")
+    )
+    bm25_top_n: int = Field(
+        default=20, gt=0, validation_alias=AliasChoices("BM25_TOP_K", "BM25_TOP_N")
+    )
+    fusion_top_n: int = Field(
+        default=30, gt=0, validation_alias=AliasChoices("RRF_TOP_K", "FUSION_TOP_N")
+    )
+    rerank_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("RERANKER_ENABLED", "RERANK_ENABLED"),
+    )
+    rerank_top_k: int = Field(
+        default=10,
+        gt=0,
+        validation_alias=AliasChoices("RERANKER_TOP_K", "RERANK_TOP_K"),
+    )
     rrf_k: int = Field(default=60, gt=0)
-    max_new_tokens: int = Field(default=512, gt=0)
-    temperature: float = Field(default=0.1, ge=0)
-    top_p: float = Field(default=0.9, ge=0, le=1)
-    do_sample: bool = False
+    retrieval_trace: bool = False
+    max_new_tokens: int = Field(
+        default=192,
+        gt=0,
+        validation_alias=AliasChoices("LLM_MAX_NEW_TOKENS", "MAX_NEW_TOKENS"),
+    )
+    temperature: float = Field(
+        default=0.0,
+        ge=0,
+        validation_alias=AliasChoices("LLM_TEMPERATURE", "TEMPERATURE"),
+    )
+    top_p: float = Field(
+        default=1.0, validation_alias=AliasChoices("LLM_TOP_P", "TOP_P"), ge=0, le=1
+    )
+    do_sample: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("LLM_DO_SAMPLE", "DO_SAMPLE"),
+    )
+    min_new_tokens: int = Field(default=0, ge=0)
+    repetition_penalty: float = Field(default=1.1, gt=0)
+    llm_max_context_tokens: int = Field(default=4096, gt=0)
+    llm_citation_repair_enabled: bool = True
+    llm_citation_repair_max_retries: int = Field(default=1, ge=0, le=1)
+    generation_trace: bool = False
     require_citation: bool = True
     grounded_only: bool = True
     abstain_when_insufficient: bool = True
     submission_filename: str = "submission.json"
     submission_encoding: str = "utf-8"
     submission_ensure_ascii: bool = False
+    ingestion_resume: bool = True
+    ingestion_chunk_batch_size: int = Field(default=1000, gt=0)
+    ingestion_embedding_batch_size: int = Field(default=64, ge=1, le=128)
+    ingestion_checksum_algorithm: str = "sha256"
+    chunking_version: str = "v2"
+    ingestion_continue_on_document_error: bool = True
+    max_document_words_warning: int = Field(default=100_000, gt=0)
+    sqlite_batch_size: int = Field(default=1000, gt=0)
+    faiss_index_type: str = "auto"
+    faiss_normalize: bool = True
+    index_atomic_publish: bool = True
+    context_neighbor_window: int = Field(default=1, ge=0)
+    max_parents_per_document: int = Field(default=3, gt=0)
+    context_max_tokens: int = Field(default=6000, gt=0)
 
     def paths(self) -> ProjectPaths:
         """Return all path settings as a typed value object."""
-        return ProjectPaths(**{
-            name: getattr(self, name)
-            for name in ProjectPaths.model_fields
-        })
+        return ProjectPaths(
+            **{name: getattr(self, name) for name in ProjectPaths.model_fields}
+        )
 
 
 @lru_cache(maxsize=1)

@@ -17,6 +17,8 @@ class LLMGeneratorFactory:
         temperature: float,
         top_p: float,
         do_sample: bool,
+        min_new_tokens: int,
+        repetition_penalty: float,
     ) -> BaseLLMGenerator:
         if provider != "local_transformers":
             raise ValueError(f"Unsupported LLM provider: {provider}")
@@ -30,4 +32,6 @@ class LLMGeneratorFactory:
             temperature=temperature,
             top_p=top_p,
             do_sample=do_sample,
+            min_new_tokens=min_new_tokens,
+            repetition_penalty=repetition_penalty,
         )

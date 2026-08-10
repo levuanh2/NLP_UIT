@@ -1,27 +1,32 @@
+retrieval:
+  trace: false
+
 query_analysis:
   enabled: true
 
 metadata_filter:
-  enabled_env: METADATA_FILTER_ENABLED
-  min_confidence_env: METADATA_FILTER_MIN_CONFIDENCE
-  fallback_to_full_corpus_env: METADATA_FILTER_FALLBACK_TO_FULL_CORPUS
+  enabled: true
 
 dense:
-  top_n_env: DENSE_TOP_N
+  top_k: 20
 
-lexical:
+bm25:
+  top_k: 20
+
+rrf:
   enabled: true
-  top_n_env: BM25_TOP_N
+  k: 60
+  top_k: 30
 
-fusion:
-  method: rrf
-  top_n_env: FUSION_TOP_N
-  rrf_k_env: RRF_K
-
-reranking:
-  enabled_env: RERANK_ENABLED
-  top_k_env: RERANK_TOP_K
+reranker:
+  enabled: true
+  top_k: 5
 
 context:
   expand_child_to_parent: true
   deduplicate_parents: true
+  neighbor_window: 1
+  same_parent_only: true
+  deduplicate_overlap: true
+  max_parents_per_document: 3
+  max_tokens: 6000

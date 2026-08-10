@@ -14,8 +14,14 @@ class Database:
 
     def initialize(self) -> None:
         """Initialize the local SQLite engine when explicitly requested."""
+        from app.indexing.metadata_store.models import Base
+
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        self._engine = create_engine(f"sqlite:///{self.database_path}")
+        self._engine = create_engine(
+            f"sqlite:///{self.database_path}",
+            connect_args={"check_same_thread": False},
+        )
+        Base.metadata.create_all(self._engine)
         self._session_factory = sessionmaker(bind=self._engine)
 
     def session(self) -> Session:

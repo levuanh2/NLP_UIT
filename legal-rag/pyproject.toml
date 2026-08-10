@@ -16,6 +16,7 @@ dependencies = [
     "numpy",
     "faiss-cpu",
     "sentence-transformers",
+    "sentencepiece",
     "transformers",
     "torch",
     "rank-bm25",

@@ -19,6 +19,8 @@ class ProjectPaths(BaseModel):
     bm25_dir: Path
     sqlite_dir: Path
     sqlite_database_path: Path
+    index_root_dir: Path
+    checkpoint_dir: Path
     config_dir: Path
 
     def ensure_runtime_directories(self) -> None:
@@ -33,5 +35,7 @@ class ProjectPaths(BaseModel):
             self.faiss_dir,
             self.bm25_dir,
             self.sqlite_dir,
+            self.index_root_dir,
+            self.checkpoint_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)

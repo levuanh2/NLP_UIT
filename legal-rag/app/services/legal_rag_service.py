@@ -1,6 +1,6 @@
 """End-to-end legal question-answering service skeleton."""
 
-from app.domain.generation import GeneratedAnswer
+from app.domain.generation import GeneratedAnswer, GenerationRequest
 from app.domain.queries import LegalQuery
 from app.generation.pipeline import GenerationPipeline
 from app.retrieval.pipeline import RetrievalPipeline
@@ -17,6 +17,11 @@ class LegalRAGService:
 
     def answer(self, query: LegalQuery) -> GeneratedAnswer:
         """Retrieve legal evidence and generate a grounded answer."""
-        # TODO(phase-implementation):
-        # Implement retrieval-to-generation orchestration.
-        raise NotImplementedError
+        retrieval_result = self.retrieval_pipeline.retrieve(query)
+        return self.generation_pipeline.generate(
+            GenerationRequest(
+                question_id=query.question_id,
+                question=query.question,
+                retrieval_result=retrieval_result,
+            )
+        )

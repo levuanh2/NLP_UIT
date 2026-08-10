@@ -95,3 +95,21 @@ def test_document_parser_factory_selects_json_parser() -> None:
 
     # Assert
     assert isinstance(parser, JsonContextParser)
+
+
+def test_parser_allows_missing_name(tmp_path: Path) -> None:
+    source = tmp_path / "context_000002.json"
+    _write_context(source, name=None)
+
+    document = JsonContextParser().parse(source)
+
+    assert document.document_name is None
+
+
+def test_parser_allows_empty_passage_for_job_reporting(tmp_path: Path) -> None:
+    source = tmp_path / "context_000003.json"
+    _write_context(source, passage="")
+
+    document = JsonContextParser().parse(source)
+
+    assert document.raw_text == ""

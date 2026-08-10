@@ -1,10 +1,20 @@
-language: vi
-max_new_tokens_env: MAX_NEW_TOKENS
-temperature_env: TEMPERATURE
-top_p_env: TOP_P
-do_sample_env: DO_SAMPLE
-grounded_only_env: GROUNDED_ONLY
-require_citation_env: REQUIRE_CITATION
-abstain_when_insufficient_env: ABSTAIN_WHEN_INSUFFICIENT
-abstention_message: >
-  Không tìm thấy đủ căn cứ pháp lý trong các văn bản được cung cấp.
+generation:
+  model_name: "AITeamVN/Vi-Qwen2-3B-RAG"
+  temperature: 0.0
+  max_new_tokens: 192
+  min_new_tokens: 0
+  repetition_penalty: 1.1
+  do_sample: false
+  top_p: 1.0
+  max_context_tokens: 4096
+  trace: false
+  citation_repair:
+    enabled: true
+    max_retries: 1
+
+validation:
+  grounded_only: true
+  require_citation: true
+  abstain_when_insufficient: true
+  abstention_message: >
+    Không tìm thấy đủ căn cứ trong tài liệu được cung cấp để trả lời câu hỏi này.

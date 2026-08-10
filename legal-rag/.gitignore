@@ -16,6 +16,9 @@ data/outputs/*
 data/cache/*
 !data/cache/.gitkeep
 
+# Generated grounding evaluation contains model answers and full evidence blocks.
+data/evaluation/grounding_50/
+
 # ==========================
 # Local databases
 # ==========================
@@ -28,6 +31,12 @@ storage/bm25/*
 
 storage/sqlite/*
 !storage/sqlite/.gitkeep
+
+storage/indexes/*
+!storage/indexes/.gitkeep
+
+storage/checkpoints/*
+!storage/checkpoints/.gitkeep
 
 *.db
 *.sqlite

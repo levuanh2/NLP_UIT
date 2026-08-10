@@ -1,5 +1,7 @@
 """Local Vietnamese legal embedding loader skeleton."""
 
+import gc
+import os
 from typing import Any
 
 import numpy as np
@@ -24,26 +26,55 @@ class VietnameseLegalEmbeddingModel(BaseEmbeddingModel):
         self._model: Any | None = None
 
     def load(self) -> None:
-        # TODO(phase-implementation):
-        # Lazily import SentenceTransformer and load only local model files.
-        raise NotImplementedError
+        if self.local_files_only:
+            os.environ["HF_HUB_OFFLINE"] = "1"
+            os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        from sentence_transformers import SentenceTransformer
+
+        self._model = SentenceTransformer(
+            self.model_name,
+            device=self.device,
+            local_files_only=self.local_files_only,
+            trust_remote_code=False,
+        )
 
     def embed_documents(self, texts: list[str]) -> np.ndarray:
-        # TODO(phase-implementation):
-        # Generate normalized passage embeddings with the configured prefix.
-        raise NotImplementedError
+        model = self._require_model()
+        return np.asarray(
+            model.encode(
+                [f"{self.passage_prefix}{text}" for text in texts],
+                normalize_embeddings=True,
+                convert_to_numpy=True,
+                show_progress_bar=False,
+            ),
+            dtype=np.float32,
+        )
 
     def embed_query(self, query: str) -> np.ndarray:
-        # TODO(phase-implementation):
-        # Generate one normalized query embedding.
-        raise NotImplementedError
+        model = self._require_model()
+        vector = model.encode(
+            f"{self.query_prefix}{query}",
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+            show_progress_bar=False,
+        )
+        return np.asarray(vector, dtype=np.float32)
 
     def dimension(self) -> int:
-        # TODO(phase-implementation):
-        # Read dimension from the loaded local model.
-        raise NotImplementedError
+        return int(self._require_model().get_sentence_embedding_dimension())
 
     def unload(self) -> None:
-        # TODO(phase-implementation):
-        # Release local model resources and device memory.
-        raise NotImplementedError
+        self._model = None
+        gc.collect()
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
+
+    def _require_model(self) -> Any:
+        if self._model is None:
+            raise RuntimeError("Embedding model has not been loaded")
+        return self._model

@@ -16,9 +16,9 @@ class JsonContextRecord(BaseModel):
     model_config = ConfigDict(strict=True, extra="ignore")
 
     id: int
-    name: str = Field(min_length=1)
+    name: str | None = None
     link: str = Field(min_length=1)
-    passage: str = Field(min_length=1)
+    passage: str | None = None
 
 
 class JsonContextParser(BaseDocumentParser):
@@ -48,7 +48,7 @@ class JsonContextParser(BaseDocumentParser):
 
         return LegalDocument(
             document_id=record.id,
-            document_name=record.name,
+            document_name=record.name.strip() if record.name else None,
             source_link=record.link,
-            raw_text=record.passage,
+            raw_text=record.passage or "",
         )

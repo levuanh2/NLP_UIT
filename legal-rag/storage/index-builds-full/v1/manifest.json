@@ -1,0 +1,15 @@
+{
+  "index_version": "v1",
+  "created_at": "2026-08-10T04:36:58.915564Z",
+  "corpus_path": "E:\\NLP_UIT\\NLP_UIT\\legal-rag\\data\\corpus",
+  "document_count": 8532,
+  "valid_document_count": 0,
+  "failed_document_count": 0,
+  "parent_count": 0,
+  "child_count": 0,
+  "embedding_model": "bqbbao6/vietnamese-legal-embedding",
+  "embedding_dimension": 768,
+  "chunking_version": "v2",
+  "faiss_index_type": "auto",
+  "status": "building"
+}

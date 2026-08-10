@@ -2,10 +2,10 @@
 
 ## 1. Project overview
 
-This repository contains the project scaffold for an offline Vietnamese legal
-retrieval-augmented generation system. It defines contracts, domain models,
-configuration, command-line entrypoints, submission tooling, and test scaffolding.
-It does not yet implement the RAG algorithms or run model inference.
+This repository contains an offline Vietnamese legal retrieval-augmented
+generation system. Streaming ingestion, hierarchical chunking, versioned local
+indexes, domain contracts, configuration, and submission tooling are implemented.
+The retrieval-to-generation orchestration and model inference remain incomplete.
 
 ## 2. Architecture
 
@@ -25,7 +25,7 @@ and are never loaded at module import time.
 app/          Domain, pipelines, infrastructure adapters, services, and CLI
 configs/      YAML configuration documents
 data/         Raw, processed, question, and output data
-storage/      FAISS, BM25, and SQLite artifacts
+storage/      Versioned FAISS/BM25/SQLite artifacts and checkpoints
 models/       Local model files (not committed)
 scripts/      Explicit command wrappers
 tests/        Unit, integration, and fixture scaffolding
@@ -82,14 +82,20 @@ files are tracked in these directories.
 ## 9. Ingestion
 
 ```bash
-python -m app.cli.main ingest
+python -m app.cli.main ingest --corpus-dir data/corpus
 ```
 
-The command defaults to `CORPUS_DATA_DIR` (`data/corpus/`), automatically scans every
-`context_*.json`, and passes each file individually to `JsonContextParser`. Users do
-not provide JSON files one by one. Cleaning, structure extraction, chunking,
-enrichment, index-building orchestration, and persistence remain TODO. PDF, DOCX,
-TXT, and OCR inputs are not supported.
+The command streams every `context_*.json` independently. It calculates a SHA-256
+checksum, cleans the current passage, extracts Vietnamese legal hierarchy, creates
+article parents and clause/point children, writes bounded SQLite/embedding/BM25
+batches, and checkpoints after each document. Empty passages are recorded as
+document errors; a missing `name` is accepted. PDF, DOCX, TXT, and OCR inputs are
+not supported.
+
+Resume an interrupted job with `--resume --job-id <id>`. Use `--index-version`
+to continue an explicit unpublished version; otherwise the CLI creates the next
+`vN` version. Completed indexes are built under `storage/indexes/vN/` and only
+published by atomically replacing `storage/indexes/CURRENT` after validation.
 
 ## 10. Indexing
 
@@ -97,9 +103,10 @@ TXT, and OCR inputs are not supported.
 python -m app.cli.main index
 ```
 
-This separate scaffold command uses `data/cache/` by default. Embedding, FAISS, BM25,
-and metadata persistence remain TODO; the final ingestion workflow will invoke index
-building after processing the complete corpus.
+The standalone `index` command remains a compatibility scaffold. The primary
+large-corpus path is `ingest`, which embeds child chunks in bounded batches and
+writes sharded FAISS plus disk-backed SQLite FTS5 BM25 artifacts directly into the
+new index version. Parent chunks are metadata/context records and are not embedded.
 
 ## 11. Ask one question
 
@@ -149,17 +156,11 @@ algorithm skeletons are explicitly skipped with implementation-phase TODO reason
 
 ## 15. Current implementation status
 
-Current phase:
-Project scaffold only.
+Current phase: streaming ingestion and local index construction implemented;
+retrieval/generation orchestration remains scaffold work.
 
 The following components are currently interfaces/skeletons and contain TODOs:
 
-- Legal structure extraction from JSON passage text
-- Parent-child chunking
-- Metadata extraction
-- Embedding
-- FAISS indexing
-- BM25 indexing
 - Dense retrieval
 - Hybrid retrieval
 - RRF
@@ -172,17 +173,37 @@ The following components are currently interfaces/skeletons and contain TODOs:
 
 Implemented in this phase: typed domain models, environment/YAML configuration
 loading, centralized paths, exception/logging utilities, competition JSON context
-validation/mapping and parser selection, exact
-submission formatting, basic strict submission validation, UTF-8 JSON writing, and
-CLI argument/file validation.
+validation/mapping and parser selection, conservative cleaning, Vietnamese legal
+hierarchy extraction, article-parent/clause-point child chunking, token-window
+fallback, adjacency metadata, SQLite micro-batches, SHA-256 checkpoint/resume,
+child-only embedding batches, sharded FAISS, disk-backed BM25, version manifests,
+atomic publishing, parent-neighbor expansion, context budgeting, exact submission
+formatting, basic strict submission validation, and UTF-8 JSON writing.
 
 ## 16. TODO roadmap
 
-1. Implement and validate conservative Vietnamese legal parsing and cleaning.
-2. Implement stable hierarchy-aware parent-child chunk identifiers.
-3. Add transactional SQLite persistence and reproducible local indexes.
-4. Implement confidence-gated filtering with empty-result full-corpus fallback.
-5. Implement dense/BM25 retrieval, RRF, reranking, and context expansion.
-6. Implement local model lifecycle and grounded answer generation.
-7. Add citation/grounding safeguards and offline evaluation.
-8. Run end-to-end tests with real local corpus and model artifacts.
+1. Validate structure heuristics and chunk sizing on representative corpus samples.
+2. Implement confidence-gated filtering with empty-result full-corpus fallback.
+3. Wire dense/BM25 retrieval, RRF, and reranking to published index versions.
+4. Complete local model lifecycle and grounded answer generation.
+5. Add citation/grounding safeguards and offline evaluation.
+6. Run end-to-end tests with real local corpus and model artifacts.
+
+## 17. Streaming storage layout
+
+```text
+storage/
+├── checkpoints/<job-id>.json
+├── indexes/
+│   ├── CURRENT
+│   └── vN/
+│       ├── manifest.json
+│       ├── faiss/shard_*.index
+│       ├── bm25/bm25.sqlite
+│       └── metadata/legal.sqlite
+└── sqlite/
+```
+
+The job keeps one document, one chunk micro-batch, and one embedding batch in
+memory. A failed version never changes `CURRENT`; the previous ready index remains
+available for rollback.

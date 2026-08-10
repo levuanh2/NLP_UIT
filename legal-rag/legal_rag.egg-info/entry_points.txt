@@ -1,0 +1,2 @@
+[console_scripts]
+legal-rag = app.cli.main:app

@@ -1,14 +1,19 @@
 strategy: structure_aware_hierarchical
 
 parent:
-  unit: article
-  target_tokens_env: PARENT_TARGET_TOKENS
-  max_tokens_env: PARENT_MAX_TOKENS
+  preferred_unit: article
+  target_tokens: 1024
+  min_tokens: 800
+  max_tokens: 1200
 
 child:
-  unit: clause_or_semantic_segment
-  target_tokens_env: CHILD_TARGET_TOKENS
-  max_tokens_env: CHILD_MAX_TOKENS
+  preferred_units:
+    - clause
+    - point
+  target_tokens: 256
+  min_tokens: 220
+  max_tokens: 320
+  overlap_tokens: 48
 
 preserve:
   chapter: true

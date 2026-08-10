@@ -19,6 +19,4 @@ def index(
         raise typer.BadParameter(f"Cache directory does not exist: {cache_directory}")
     # TODO(phase-implementation):
     # Build dependencies and wire IndexingService.
-    typer.echo(
-        f"Indexing scaffold ready for {cache_directory} (rebuild={rebuild})."
-    )
+    typer.echo(f"Indexing scaffold ready for {cache_directory} (rebuild={rebuild}).")
