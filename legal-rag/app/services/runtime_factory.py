@@ -109,6 +109,7 @@ def build_local_rag_runtime(
             do_sample=settings.do_sample,
             min_new_tokens=settings.min_new_tokens,
             repetition_penalty=settings.repetition_penalty,
+            quantization=settings.model_quantization,
         )
         started = time.perf_counter()
         llm.load()
@@ -206,7 +207,12 @@ def _parameter_count(model_adapter: object) -> int:
         raise RuntimeError(
             f"Configured model {type(model_adapter).__name__} has no parameters()"
         )
-    return sum(parameter.numel() for parameter in parameters())
+    # NF4 packs two weights per uint8, so numel() would under-report the real
+    # parameter count that the competition ceiling is measured against.
+    return sum(
+        parameter.numel() * (2 if parameter.dtype.is_floating_point is False else 1)
+        for parameter in parameters()
+    )
 
 
 def verify_parameter_budget(parameter_counts: dict[str, int]) -> None:

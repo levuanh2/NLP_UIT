@@ -24,10 +24,12 @@ class QwenGenerator(BaseLLMGenerator):
         do_sample: bool,
         min_new_tokens: int,
         repetition_penalty: float,
+        quantization: str = "none",
     ) -> None:
         self.model_name = model_name
         self.device = device
         self.dtype = dtype
+        self.quantization = quantization
         self.local_files_only = local_files_only
         self.trust_remote_code = trust_remote_code
         self.max_new_tokens = max_new_tokens
@@ -75,6 +77,7 @@ class QwenGenerator(BaseLLMGenerator):
                 local_files_only=True,
                 trust_remote_code=False,
                 torch_dtype=torch_dtype,
+                **self._quantization_options(torch),
             )
         except Exception as exc:
             self._model = None
@@ -84,7 +87,8 @@ class QwenGenerator(BaseLLMGenerator):
             ) from exc
         if self._tokenizer.pad_token_id is None:
             self._tokenizer.pad_token = self._tokenizer.eos_token
-        self._model.to(self._resolved_device)
+        if self.quantization == "none":
+            self._model.to(self._resolved_device)
         self._model.eval()
 
     def generate(
@@ -226,6 +230,28 @@ class QwenGenerator(BaseLLMGenerator):
         if self.device.startswith("cuda") and not torch.cuda.is_available():
             raise ConfigurationError("CUDA was configured but is not available")
         return self.device
+
+    def _quantization_options(self, torch: Any) -> dict[str, Any]:
+        """Fit the 3B model in 6 GB of VRAM; fp16 weights leave no room for KV cache."""
+        if self.quantization == "none":
+            return {}
+        if self.quantization != "nf4":
+            raise ConfigurationError(
+                f"Unsupported MODEL_QUANTIZATION: {self.quantization}"
+            )
+        if self._resolved_device != "cuda":
+            raise ConfigurationError("NF4 quantization requires a CUDA device")
+        from transformers import BitsAndBytesConfig
+
+        return {
+            "quantization_config": BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+            ),
+            "device_map": {"": 0},
+        }
 
     def _resolve_dtype(self, torch: Any) -> Any:
         if self.dtype == "auto":

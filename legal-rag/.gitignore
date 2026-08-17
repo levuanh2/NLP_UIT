@@ -41,6 +41,15 @@ storage/checkpoints/*
 *.db
 *.sqlite
 *.sqlite3
+# Transient SQLite journal state, not source.
+*.sqlite-wal
+*.sqlite-shm
+
+# FAISS shards are derived data rebuilt by `legal-rag ingest`, ~167 MB each,
+# which is over GitHub's 100 MB per-file hard limit.
+storage/**/faiss/*.index
+storage/**/faiss/*.index.ids.json
+storage/**/faiss/shards.json
 
 # ==========================
 # Downloaded Models

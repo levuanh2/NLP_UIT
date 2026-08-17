@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     model_trust_remote_code: bool = False
     model_device: str = "auto"
     model_dtype: str = "auto"
+    model_quantization: str = "none"
     embedding_device: str = "cpu"
     reranker_device: str = "cpu"
 

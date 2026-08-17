@@ -19,6 +19,7 @@ class LLMGeneratorFactory:
         do_sample: bool,
         min_new_tokens: int,
         repetition_penalty: float,
+        quantization: str = "none",
     ) -> BaseLLMGenerator:
         if provider != "local_transformers":
             raise ValueError(f"Unsupported LLM provider: {provider}")
@@ -34,4 +35,5 @@ class LLMGeneratorFactory:
             do_sample=do_sample,
             min_new_tokens=min_new_tokens,
             repetition_penalty=repetition_penalty,
+            quantization=quantization,
         )

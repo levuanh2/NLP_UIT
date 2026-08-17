@@ -40,6 +40,7 @@ class VietnameseReranker(BaseReranker):
             raise RuntimeError("Remote reranker code is disabled for this pipeline")
         os.environ["HF_HUB_OFFLINE"] = "1"
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        import torch
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
         self._tokenizer = AutoTokenizer.from_pretrained(
@@ -47,10 +48,13 @@ class VietnameseReranker(BaseReranker):
             local_files_only=True,
             trust_remote_code=False,
         )
+        # ponytail: fp16 only on CUDA; CPU fp16 is slower than fp32, not faster
+        dtype = torch.float16 if self.device.startswith("cuda") else torch.float32
         self._model = AutoModelForSequenceClassification.from_pretrained(
             self.model_name,
             local_files_only=True,
             trust_remote_code=False,
+            dtype=dtype,
         )
         parameter_count = sum(
             parameter.numel() for parameter in self._model.parameters()

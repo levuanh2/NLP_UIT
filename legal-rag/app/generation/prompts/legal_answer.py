@@ -81,15 +81,9 @@ class LegalPromptBuilder:
             self._render_evidence(index, evidence)
             for index, evidence in enumerate(evidences, start=1)
         )
-        allowed_citations = ", ".join(
-            f"[{index}]" for index in range(1, len(evidences) + 1)
-        )
-        answer_heading = (
-            "### Trả lời (phải dùng citation phù hợp trong: "
-            f"{allowed_citations}):"
-            if allowed_citations
-            else "### Trả lời:"
-        )
+        # No "use citation [n]" instruction: the answer is scored on token
+        # overlap with expert prose, which carries no bracket markers.
+        answer_heading = "### Trả lời:"
         return (
             f"{LEGAL_SYSTEM_PROMPT}\n"
             f"CONTEXT:\n### Ngữ cảnh:\n{blocks}\n\n"

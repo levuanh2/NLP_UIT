@@ -141,7 +141,7 @@ def test_prompt_builder() -> None:
     prompt = LegalPromptBuilder(
         max_context_tokens=1000, reserved_generation_tokens=64
     ).build("Điều kiện là gì?", retrieval())
-    assert "Chỉ trả lời từ Ngữ cảnh" in prompt
+    assert "Dựa vào Ngữ cảnh" in prompt
     assert "[1]\nDOCUMENT:" in prompt
     assert "Document ID: 740" in prompt
     assert "Điều: Điều 37" in prompt
@@ -149,8 +149,7 @@ def test_prompt_builder() -> None:
     assert "[/1]" in prompt
     assert "### Ngữ cảnh:" in prompt
     assert "### Câu hỏi:" in prompt
-    assert "Căn cứ [1]" in prompt
-    assert "[99], [0], [citation], (1)" in prompt
+    assert "Cấm dùng dấu ngoặc vuông kiểu [1], [2] để trích dẫn." in prompt
     assert "dense_score" not in prompt and "rerank" not in prompt
 
 
@@ -160,7 +159,7 @@ def test_qwen_conversation_preserves_grounded_prompt_roles() -> None:
     ).build("Điều kiện là gì?", retrieval())
     conversation = QwenGenerator._conversation(prompt)
     assert [message["role"] for message in conversation] == ["system", "user"]
-    assert "Chỉ trả lời từ Ngữ cảnh" in conversation[0]["content"]
+    assert "Dựa vào Ngữ cảnh" in conversation[0]["content"]
     assert conversation[1]["content"].startswith(
         "CONTEXT:\n### Ngữ cảnh:\n[1]\nDOCUMENT:"
     )
