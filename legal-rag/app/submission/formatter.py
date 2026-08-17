@@ -6,8 +6,53 @@ from app.domain.generation import GeneratedAnswer
 from app.domain.submission import SubmissionAnswer
 
 _CITATION = re.compile(r"\s*\[\d+\]")
-# "(Ngữ cảnh 1)" points at the prompt layout, not at anything a reader sees.
-_CONTEXT_REF = re.compile(r"\s*\(\s*Ngữ cảnh\s*\d+\s*\)", flags=re.IGNORECASE)
+# The prompt labels its evidence blocks "Ngữ cảnh 1"; the model points back at
+# them, numbered or not. Expert prose never says "ngữ cảnh", so every mention
+# is scaffolding — only the amount of surrounding text to take with it varies.
+_CONTEXT_WORD = (
+    r"(?:các\s+|những\s+)?ngữ\s*cảnh"
+    r"(?:\s*\d+(?:\s*(?:,|và|-|đến)\s*(?:ngữ\s*cảnh\s*)?\d+)*)?"
+    r"(?:\s+(?:được\s+)?(?:cung\s+cấp|nêu(?:\s+rõ)?|trích|đề\s+cập))?"
+)
+# A preposition binds the reference into the sentence: "theo ngữ cảnh 2".
+_CONTEXT_PHRASE = (
+    rf"(?:(?:dựa\s+(?:trên|vào)|theo|tại|trong|từ|xem)\s+)?{_CONTEXT_WORD}"
+)
+# "(Ngữ cảnh 1)", "(theo Ngữ cảnh 4 và 5)" hold nothing but the reference.
+_CONTEXT_REF = re.compile(
+    rf"\s*[(\[]\s*{_CONTEXT_PHRASE}\s*[)\]]", flags=re.IGNORECASE
+)
+# "(theo Điều 2, Khoản 1, Ngữ cảnh 1)" also carries a real citation; keep it.
+_CONTEXT_IN_PAREN = re.compile(
+    rf"[,;]?\s*{_CONTEXT_PHRASE}\s*(?=[)\]])", flags=re.IGNORECASE
+)
+# Evidence metadata can surface verbatim: "(Document ID: 128691)" and
+# "Child ID: doc:231961:article:40:38:segment:0:child:0".
+_DOCUMENT_ID_PAREN = re.compile(
+    r"\s*\(\s*(?:Document|Child)\s+ID\s*:?\s*[\w:]+\s*\)", flags=re.IGNORECASE
+)
+_DOCUMENT_ID = re.compile(
+    r"[,;]?\s*(?:Document|Child)\s+ID\s*:?\s*[\w:]+", flags=re.IGNORECASE
+)
+# "Thông tin này được cung cấp trong Ngữ cảnh 4." grades the source instead of
+# stating the law, so the whole clause goes. The demonstrative opener is what
+# makes the clause pure meta: "Dựa trên thông tin từ ngữ cảnh, Sổ theo dõi là
+# Mẫu TP-TVPL-01" also mentions both, and carries the answer.
+_CONTEXT_META = re.compile(
+    rf"(?:^|(?<=[.!?]))\s*"
+    rf"(?:Đây\s+là|Điều\s+này|Thông\s+tin\s+này|Nội\s+dung\s+này|Chi\s+tiết\s+này)"
+    rf"[^.!?:]*{_CONTEXT_WORD}[^.!?:]*[.!?:]",
+    flags=re.IGNORECASE,
+)
+# "Ngữ cảnh 1 (Luật Thuế 2007): Theo Điều 8 ..." labels a block and then states
+# the law; only the label goes.
+_CONTEXT_LABEL = re.compile(
+    rf"(?:^|(?<=[.!?:]))\s*{_CONTEXT_WORD}\s*(?:\([^)]*\))?\s*[:.]",
+    flags=re.IGNORECASE,
+)
+# Whatever survives is a bare mention mid-sentence; drop the phrase alone and
+# let the punctuation repair below close the gap.
+_CONTEXT_MENTION = re.compile(rf"\s*{_CONTEXT_PHRASE}", flags=re.IGNORECASE)
 # "Văn bản 2 (Ngữ cảnh 2):" is a heading the model invents for the prompt blocks.
 _CONTEXT_HEADING = re.compile(
     r"\**\s*Văn bản\s*\d+\s*\**\s*:?\s*", flags=re.IGNORECASE
@@ -22,8 +67,10 @@ _TRUNCATED_SLUG = re.compile(r"\s*\(\s*\w+(?:-\w+){2,}[^)]*$")
 # A filename tail can also ride along an inline reference:
 # "Quyết định 02-2023-QD-KTNN-lap-tham-dinh-...-554186". Keep the document
 # code, drop the descriptive slug; the year+agency shape keeps this narrow.
+# The tail can mix case ("...-trong-nha-truong-Quan-doi-534108"), so it runs to
+# the end of the hyphenated token, not to the first capital.
 _INLINE_SLUG_TAIL = re.compile(
-    r"(\d+-\d{4}-[A-ZĐ]+(?:-[A-ZĐ]+)*)-[a-z0-9][a-z0-9-]*"
+    r"(\d+-\d{4}-[A-ZĐ]+(?:-[A-ZĐ]+)*)-[a-z0-9][A-Za-z0-9-]*"
 )
 _LEAD_IN = re.compile(
     r"^\s*(?:Dựa\s+(?:trên|vào)|Theo|Căn\s+cứ|Trong)\s+(?:vào\s+)?"
@@ -44,6 +91,11 @@ _LIST_MARKER = re.compile(r"^[ \t]*(?:\d+[.)]|[-•>]+)[ \t]+", flags=re.MULTILI
 # "... sau: - Điều 50 ...".
 _INLINE_BULLET = re.compile(r"(?<=[:;.])\s+[-•>]+\s+")
 _DANGLING = re.compile(r"\s+([,.;:])")
+# Stripping a lead-in can expose the comma that followed it, or empty out a
+# parenthetical that held only metadata.
+_LEADING_PUNCTUATION = re.compile(r"^[\s,.;:)\]]+")
+_ORPHAN_PAREN_COMMA = re.compile(r"[,;]\s*(?=[)\]])")
+_EMPTY_PAREN = re.compile(r"\s*[(\[]\s*[)\]]")
 _REPEATED_PUNCTUATION = re.compile(r"([,.;:])(?:\s*[,;:])+")
 _WHITESPACE = re.compile(r"\s+")
 
@@ -57,20 +109,29 @@ def normalize_answer(answer: str) -> str:
     punctuation is repaired after the markers are gone.
     """
     text = _CITATION.sub("", answer)
+    text = _DOCUMENT_ID_PAREN.sub("", text)
+    text = _DOCUMENT_ID.sub("", text)
     text = _CONTEXT_REF.sub("", text)
+    text = _CONTEXT_IN_PAREN.sub("", text)
+    text = _CONTEXT_META.sub("", text)
+    text = _CONTEXT_LABEL.sub("", text)
     text = _DOCUMENT_SLUG.sub("", text)
     text = _CONTEXT_HEADING.sub("", text)
     text = _MARKDOWN.sub(" ", text)
     text = _LIST_MARKER.sub("", text)
     text = _INLINE_BULLET.sub(" ", text)
     text = _LEAD_IN.sub("", text)
+    text = _CONTEXT_MENTION.sub("", text)
     text = _TRUNCATED_SLUG.sub("", text)
     text = _INLINE_SLUG_TAIL.sub(r"\1", text)
     text = _TRAILING_META.sub("", text)
+    text = _ORPHAN_PAREN_COMMA.sub("", text)
+    text = _EMPTY_PAREN.sub("", text)
     text = _DANGLING.sub(r"\1", text)
     text = _REPEATED_PUNCTUATION.sub(r"\1", text)
     text = _WHITESPACE.sub(" ", text).strip()
     text = _DANGLING.sub(r"\1", text)
+    text = _LEADING_PUNCTUATION.sub("", text)
     return text[:1].upper() + text[1:] if text else text
 
 

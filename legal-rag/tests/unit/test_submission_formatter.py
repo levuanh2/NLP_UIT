@@ -95,6 +95,53 @@ def test_formatter_trims_filename_tails_and_self_grading_closers() -> None:
     )
 
 
+def test_formatter_strips_every_shape_of_evidence_block_reference() -> None:
+    """The three forms seen in the 1000-question run, verbatim."""
+    cases = {
+        "1": (
+            "Theo Điều 131 của Luật Đất đai 2003 (Ngữ cảnh 4 và 5): "
+            "trường hợp hết thời hạn góp vốn thì chấm dứt."
+        ),
+        "2": (
+            "Hồ sơ gồm giấy kiểm tra điều lệnh. "
+            "Thông tin này được cung cấp trong Ngữ cảnh 4."
+        ),
+        "3": (
+            "Điều kiện hoàn thuế là: Ngữ cảnh 1 (Luật Thuế 2007): "
+            "Theo Điều 8, thu nhập chưa đến mức chịu thuế."
+        ),
+        "4": (
+            "Biên kịch 2,70%. "
+            "Thông tin này được trích từ Ngữ cảnh 2 (Document ID: 128691)."
+        ),
+        # A lead-in, not a meta clause: the sentence after it is the answer.
+        "5": (
+            "Theo ngữ cảnh 2 (Quyết định 244/QD-BCT-2017), Văn phòng Bộ có "
+            "trách nhiệm thông báo kịp thời cho Thanh tra Bộ."
+        ),
+    }
+    answers = [
+        GeneratedAnswer(question_id=qid, answer=text, grounded=False)
+        for qid, text in cases.items()
+    ]
+
+    formatted = SubmissionFormatter().format(answers)
+
+    assert all("cảnh" not in a.answer for a in formatted.values())
+    assert formatted["1"].answer == (
+        "Theo Điều 131 của Luật Đất đai 2003: "
+        "trường hợp hết thời hạn góp vốn thì chấm dứt."
+    )
+    assert formatted["2"].answer == "Hồ sơ gồm giấy kiểm tra điều lệnh."
+    assert formatted["3"].answer == (
+        "Điều kiện hoàn thuế là: Theo Điều 8, thu nhập chưa đến mức chịu thuế."
+    )
+    assert formatted["4"].answer == "Biên kịch 2,70%."
+    assert formatted["5"].answer == (
+        "Văn phòng Bộ có trách nhiệm thông báo kịp thời cho Thanh tra Bộ."
+    )
+
+
 def test_formatter_keeps_document_codes_that_have_no_filename_tail() -> None:
     answer = GeneratedAnswer(
         question_id="1",
