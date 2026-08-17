@@ -37,6 +37,12 @@ def main() -> int:
         "--output", type=Path, default=ROOT / "data/outputs/submission.json"
     )
     parser.add_argument(
+        "--ascii",
+        action="store_true",
+        help="Escape Vietnamese as \\uXXXX. The parsed answers are identical, but "
+        "the file is then pure ASCII and cannot be mis-decoded by the grader.",
+    )
+    parser.add_argument(
         "--allow-missing",
         action="store_true",
         help="Fill unanswered questions with the abstention sentence instead of "
@@ -68,7 +74,7 @@ def main() -> int:
 
     ordered = [answers[question_id] for question_id in expected]
     submission = SubmissionFormatter().format(ordered)
-    SubmissionWriter().write(
+    SubmissionWriter(ensure_ascii=args.ascii).write(
         submission, args.output, expected_question_ids=set(expected)
     )
 

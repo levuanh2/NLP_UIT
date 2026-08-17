@@ -154,6 +154,27 @@ def test_formatter_keeps_document_codes_that_have_no_filename_tail() -> None:
     assert "88-2022-ND-CP" in text and "74/2015/NĐ-CP" in text
 
 
+def test_ascii_escaped_submission_parses_back_to_the_same_vietnamese(
+    tmp_path: Path,
+) -> None:
+    """A grader on a non-UTF-8 locale can read the escaped file; both parse alike."""
+    expected = "Người lao động có quyền."
+    submission = SubmissionFormatter().format(
+        [GeneratedAnswer(question_id="1", answer=expected, grounded=True)]
+    )
+    raw_path, ascii_path = tmp_path / "raw.json", tmp_path / "ascii.json"
+
+    SubmissionWriter().write(submission, raw_path)
+    SubmissionWriter(ensure_ascii=True).write(submission, ascii_path)
+
+    blob = ascii_path.read_bytes()
+    assert max(blob) < 128
+    assert json.loads(blob.decode("cp1252"))["1"]["answer"] == expected
+    assert json.loads(raw_path.read_text(encoding="utf-8")) == json.loads(
+        blob.decode("ascii")
+    )
+
+
 def test_submission_writer_uses_utf8(tmp_path: Path) -> None:
     submission = SubmissionFormatter().format(
         [GeneratedAnswer(question_id="1", answer="Quyền và nghĩa vụ", grounded=True)]
