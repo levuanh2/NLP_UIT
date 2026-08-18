@@ -184,7 +184,9 @@ def main() -> int:
             # Cosine over a 100-epoch bound would barely decay before early
             # stopping fires, so the schedule is flat with a short warmup.
             lr_scheduler_type="constant_with_warmup",
-            warmup_ratio=0.03,
+            # transformers 5 dropped warmup_ratio; with a 100-epoch bound a
+            # ratio was meaningless anyway, so warmup is a flat step count.
+            warmup_steps=20,
             logging_steps=10,
             eval_strategy="steps" if validation else "no",
             eval_steps=args.eval_steps,
