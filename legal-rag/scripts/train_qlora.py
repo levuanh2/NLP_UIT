@@ -89,7 +89,7 @@ def main() -> int:
         help="Upper bound only; early stopping decides when to stop. A LoRA over "
         "a few thousand examples usually saturates within a handful of epochs.",
     )
-    parser.add_argument("--max-length", type=int, default=6144)
+    parser.add_argument("--max-length", type=int, default=5120)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--rank", type=int, default=8)
     parser.add_argument("--batch-size", type=int, default=1)
@@ -103,7 +103,7 @@ def main() -> int:
         "adapter is worth keeping is METEOR over the generated dev answers, "
         "which costs a generation each and stays on the 200-question dev set.",
     )
-    parser.add_argument("--eval-steps", type=int, default=50)
+    parser.add_argument("--eval-steps", type=int, default=25)
     parser.add_argument(
         "--patience",
         type=int,
@@ -139,7 +139,21 @@ def main() -> int:
         dataset = torch.utils.data.Subset(dataset, range(len(dataset) - held_back))
     print(f"train: {len(dataset)}  validation: {len(validation or [])}")
 
-    model = AutoModelForCausalLM.from_pretrained(
+    # Cross-entropy over a 151936-token vocabulary materialises a logit tensor
+    # of seq x vocab, then an fp32 copy for the loss and another for its
+    # gradient — several GB that pushed the allocator into OOM-retry loops and
+    # made a step take 52s. Liger fuses the projection into the loss and
+    # computes it in slices, so the full matrix never exists.
+    loader = AutoModelForCausalLM
+    try:
+        from liger_kernel.transformers import AutoLigerKernelForCausalLM
+
+        loader = AutoLigerKernelForCausalLM
+        print("using liger fused cross-entropy")
+    except Exception as exc:  # noqa: BLE001 - training still works without it
+        print(f"liger unavailable ({exc}); falling back to standard loss")
+
+    model = loader.from_pretrained(
         args.model,
         quantization_config=BitsAndBytesConfig(
             load_in_4bit=True,
