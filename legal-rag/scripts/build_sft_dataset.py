@@ -33,11 +33,23 @@ def main() -> int:
     parser.add_argument("--train", type=Path, default=ROOT / "data/train/train.json")
     parser.add_argument("--output", type=Path, default=ROOT / "data/train/sft.jsonl")
     parser.add_argument("--limit", type=int, help="Use only the first N questions.")
+    parser.add_argument(
+        "--exclude",
+        type=Path,
+        default=ROOT / "data/questions/dev.json",
+        help="Question file whose IDs must stay out of training. The dev slice "
+        "comes out of train.json, so training on it would make its score "
+        "meaningless. Pass a missing path to disable.",
+    )
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
     train = json.loads(args.train.read_text(encoding="utf-8"))
-    question_ids = sorted(train)
+    held_out: set[str] = set()
+    if args.exclude and args.exclude.is_file():
+        held_out = set(json.loads(args.exclude.read_text(encoding="utf-8")))
+    question_ids = [qid for qid in sorted(train) if qid not in held_out]
+    print(f"held out {len(held_out)} dev ids from {args.exclude}")
     random.seed(args.seed)
     random.shuffle(question_ids)
     if args.limit:

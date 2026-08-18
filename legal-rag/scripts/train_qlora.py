@@ -87,6 +87,14 @@ def main() -> int:
     parser.add_argument("--rank", type=int, default=16)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--accumulation", type=int, default=16)
+    parser.add_argument(
+        "--val-size",
+        type=int,
+        default=350,
+        help="Examples held back for validation loss. Loss only — it is a cheap "
+        "forward pass that catches overfitting, while the metric that decides "
+        "anything is METEOR over the generated dev answers.",
+    )
     args = parser.parse_args()
 
     records = [
@@ -105,6 +113,15 @@ def main() -> int:
     if not len(dataset):
         print("nothing to train on")
         return 1
+
+    validation = None
+    if args.val_size and len(dataset) > args.val_size * 2:
+        held_back = min(args.val_size, len(dataset) // 10)
+        validation = torch.utils.data.Subset(
+            dataset, range(len(dataset) - held_back, len(dataset))
+        )
+        dataset = torch.utils.data.Subset(dataset, range(len(dataset) - held_back))
+    print(f"train: {len(dataset)}  validation: {len(validation or [])}")
 
     model = AutoModelForCausalLM.from_pretrained(
         args.model,
@@ -151,6 +168,9 @@ def main() -> int:
             lr_scheduler_type="cosine",
             warmup_ratio=0.03,
             logging_steps=10,
+            eval_strategy="steps" if validation else "no",
+            eval_steps=50,
+            per_device_eval_batch_size=args.batch_size,
             save_strategy="epoch",
             save_total_limit=2,
             bf16=True,
@@ -159,6 +179,7 @@ def main() -> int:
             report_to=[],
         ),
         train_dataset=dataset,
+        eval_dataset=validation,
         data_collator=lambda batch: collate(batch, tokenizer.pad_token_id),
     )
     trainer.train()
