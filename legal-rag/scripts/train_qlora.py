@@ -85,9 +85,10 @@ def main() -> int:
     parser.add_argument(
         "--epochs",
         type=float,
-        default=100.0,
-        help="Upper bound only; early stopping decides when to stop. A LoRA over "
-        "a few thousand examples usually saturates within a handful of epochs.",
+        default=3.0,
+        help="Upper bound; early stopping usually cuts first. At 57s a step an "
+        "epoch is 2.2 hours, so the bound is what keeps a stalled run from "
+        "burning days.",
     )
     parser.add_argument("--max-length", type=int, default=5120)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
@@ -106,10 +107,10 @@ def main() -> int:
     parser.add_argument(
         "--precision",
         choices=("bf16", "nf4"),
-        default="bf16",
-        help="Base weight format. nf4 is QLoRA and needs ~4GB less, but every "
-        "matmul pays to dequantise. bf16 fits once the loss is fused and runs "
-        "the arithmetic natively.",
+        default="nf4",
+        help="Base weight format. Measured on this box they run at the same "
+        "speed — 56s a step against 57s — because the card saturates either "
+        "way, so nf4 wins on the 6GB it does not spend.",
     )
     parser.add_argument("--eval-steps", type=int, default=25)
     parser.add_argument(
