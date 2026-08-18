@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     model_device: str = "auto"
     model_dtype: str = "auto"
     model_quantization: str = "none"
+    # Directory holding a trained LoRA/QLoRA adapter. Empty means the base
+    # model answers on its own, which is the behaviour before any training.
+    llm_adapter_path: str = ""
     embedding_device: str = "cpu"
     reranker_device: str = "cpu"
 

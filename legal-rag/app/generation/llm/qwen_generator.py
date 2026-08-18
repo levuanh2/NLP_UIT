@@ -25,11 +25,13 @@ class QwenGenerator(BaseLLMGenerator):
         min_new_tokens: int,
         repetition_penalty: float,
         quantization: str = "none",
+        adapter_path: str = "",
     ) -> None:
         self.model_name = model_name
         self.device = device
         self.dtype = dtype
         self.quantization = quantization
+        self.adapter_path = adapter_path
         self.local_files_only = local_files_only
         self.trust_remote_code = trust_remote_code
         self.max_new_tokens = max_new_tokens
@@ -87,9 +89,30 @@ class QwenGenerator(BaseLLMGenerator):
             ) from exc
         if self._tokenizer.pad_token_id is None:
             self._tokenizer.pad_token = self._tokenizer.eos_token
+        self._attach_adapter()
         if self.quantization == "none":
             self._model.to(self._resolved_device)
         self._model.eval()
+
+    def _attach_adapter(self) -> None:
+        """Fold a trained LoRA/QLoRA adapter onto the freshly loaded base."""
+        if not self.adapter_path:
+            return
+        try:
+            from peft import PeftModel
+
+            self._model = PeftModel.from_pretrained(
+                self._model, self.adapter_path, is_trainable=False
+            )
+            # An unquantized base can absorb the adapter into its own weights,
+            # which removes two extra matmuls per adapted layer. A quantized one
+            # cannot, so the wrapper stays and pays that cost per token.
+            if self.quantization == "none":
+                self._model = self._model.merge_and_unload()
+        except Exception as exc:
+            raise ConfigurationError(
+                f"Could not attach adapter {self.adapter_path!r}: {exc}"
+            ) from exc
 
     def generate(
         self,

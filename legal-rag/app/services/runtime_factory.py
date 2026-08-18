@@ -110,6 +110,7 @@ def build_local_rag_runtime(
             min_new_tokens=settings.min_new_tokens,
             repetition_penalty=settings.repetition_penalty,
             quantization=settings.model_quantization,
+            adapter_path=settings.llm_adapter_path,
         )
         started = time.perf_counter()
         llm.load()

@@ -2,6 +2,7 @@
 
 import pytest
 
+from app.core.exceptions import ConfigurationError
 from app.domain.generation import GenerationRequest
 from app.domain.queries import QueryMetadata
 from app.domain.retrieval import LegalEvidence, RetrievalResult
@@ -532,3 +533,37 @@ def test_unsupported_grounding_does_not_trigger_repair() -> None:
     assert any(
         "Unsupported legal metadata" in error for error in result.validation_errors
     )
+
+
+def _generator(adapter_path: str = "") -> QwenGenerator:
+    return QwenGenerator(
+        model_name="AITeamVN/Vi-Qwen2-3B-RAG",
+        device="cpu",
+        dtype="auto",
+        local_files_only=True,
+        trust_remote_code=False,
+        max_new_tokens=64,
+        temperature=0.0,
+        top_p=1.0,
+        do_sample=False,
+        min_new_tokens=0,
+        repetition_penalty=1.1,
+        adapter_path=adapter_path,
+    )
+
+
+def test_generator_without_an_adapter_leaves_the_base_model_alone() -> None:
+    generator = _generator()
+    generator._model = sentinel = object()
+
+    generator._attach_adapter()
+
+    assert generator._model is sentinel
+
+
+def test_generator_reports_an_adapter_it_cannot_load(tmp_path) -> None:
+    generator = _generator(adapter_path=str(tmp_path / "missing-adapter"))
+    generator._model = object()
+
+    with pytest.raises(ConfigurationError, match="Could not attach adapter"):
+        generator._attach_adapter()
