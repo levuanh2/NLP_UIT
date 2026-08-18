@@ -22,6 +22,7 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
+    EarlyStoppingCallback,
     Trainer,
     TrainingArguments,
 )
@@ -81,19 +82,34 @@ def main() -> int:
     parser.add_argument("--model", default="AITeamVN/Vi-Qwen2-3B-RAG")
     parser.add_argument("--dataset", type=Path, default=ROOT / "data/train/sft.jsonl")
     parser.add_argument("--output", type=Path, default=ROOT / "models/qlora-answerer")
-    parser.add_argument("--epochs", type=float, default=2.0)
+    parser.add_argument(
+        "--epochs",
+        type=float,
+        default=100.0,
+        help="Upper bound only; early stopping decides when to stop. A LoRA over "
+        "a few thousand examples usually saturates within a handful of epochs.",
+    )
     parser.add_argument("--max-length", type=int, default=6144)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
-    parser.add_argument("--rank", type=int, default=16)
+    parser.add_argument("--rank", type=int, default=8)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--accumulation", type=int, default=16)
     parser.add_argument(
-        "--val-size",
+        "--val-fraction",
+        type=float,
+        default=0.2,
+        help="Share of the dataset held back for validation loss. Loss is a "
+        "forward pass, so a fifth is cheap; the metric that decides whether the "
+        "adapter is worth keeping is METEOR over the generated dev answers, "
+        "which costs a generation each and stays on the 200-question dev set.",
+    )
+    parser.add_argument("--eval-steps", type=int, default=50)
+    parser.add_argument(
+        "--patience",
         type=int,
-        default=350,
-        help="Examples held back for validation loss. Loss only — it is a cheap "
-        "forward pass that catches overfitting, while the metric that decides "
-        "anything is METEOR over the generated dev answers.",
+        default=4,
+        help="Evaluations without an improvement in validation loss before "
+        "stopping.",
     )
     args = parser.parse_args()
 
@@ -115,8 +131,8 @@ def main() -> int:
         return 1
 
     validation = None
-    if args.val_size and len(dataset) > args.val_size * 2:
-        held_back = min(args.val_size, len(dataset) // 10)
+    held_back = int(len(dataset) * args.val_fraction)
+    if held_back:
         validation = torch.utils.data.Subset(
             dataset, range(len(dataset) - held_back, len(dataset))
         )
@@ -165,14 +181,21 @@ def main() -> int:
             gradient_accumulation_steps=args.accumulation,
             num_train_epochs=args.epochs,
             learning_rate=args.learning_rate,
-            lr_scheduler_type="cosine",
+            # Cosine over a 100-epoch bound would barely decay before early
+            # stopping fires, so the schedule is flat with a short warmup.
+            lr_scheduler_type="constant_with_warmup",
             warmup_ratio=0.03,
             logging_steps=10,
             eval_strategy="steps" if validation else "no",
-            eval_steps=50,
+            eval_steps=args.eval_steps,
             per_device_eval_batch_size=args.batch_size,
-            save_strategy="epoch",
+            # load_best_model_at_end needs saves on the same cadence as evals.
+            save_strategy="steps" if validation else "epoch",
+            save_steps=args.eval_steps,
             save_total_limit=2,
+            load_best_model_at_end=bool(validation),
+            metric_for_best_model="eval_loss",
+            greater_is_better=False,
             bf16=True,
             optim="paged_adamw_8bit",
             gradient_checkpointing=True,
@@ -181,6 +204,11 @@ def main() -> int:
         train_dataset=dataset,
         eval_dataset=validation,
         data_collator=lambda batch: collate(batch, tokenizer.pad_token_id),
+        callbacks=(
+            [EarlyStoppingCallback(early_stopping_patience=args.patience)]
+            if validation
+            else []
+        ),
     )
     trainer.train()
     model.save_pretrained(str(args.output / "final"))
