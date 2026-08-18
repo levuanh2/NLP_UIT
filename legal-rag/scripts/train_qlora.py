@@ -92,7 +92,7 @@ def main() -> int:
     )
     parser.add_argument("--max-length", type=int, default=5120)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
-    parser.add_argument("--rank", type=int, default=8)
+    parser.add_argument("--rank", type=int, default=16)
     # Sequences run 2200-5120 tokens, so a batch of 2 pads the shorter one up
     # to the longer and spends about a third of the step on padding: 72s
     # against 56s for one sequence at a time.
@@ -101,11 +101,13 @@ def main() -> int:
     parser.add_argument(
         "--val-fraction",
         type=float,
-        default=0.2,
-        help="Share of the dataset held back for validation loss. Loss is a "
-        "forward pass, so a fifth is cheap; the metric that decides whether the "
-        "adapter is worth keeping is METEOR over the generated dev answers, "
-        "which costs a generation each and stays on the 200-question dev set.",
+        default=0.05,
+        help="Share of the dataset held back for validation loss. A fifth cost "
+        "8.2 minutes an evaluation and 2.2 hours across a run; a twentieth of "
+        "6800 examples is still 340, and loss varies far less across examples "
+        "than METEOR does. The metric that decides whether the adapter is worth "
+        "keeping is METEOR over the generated dev answers, which costs a "
+        "generation each and stays on the 200-question dev set.",
     )
     parser.add_argument(
         "--precision",
