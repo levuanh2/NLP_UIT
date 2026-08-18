@@ -215,3 +215,36 @@ def test_submission_writer(tmp_path: Path) -> None:
     assert json.loads(output.read_text(encoding="utf-8")) == {
         "147194": {"answer": "Câu trả lời có căn cứ [1]."}
     }
+
+
+def test_formatter_drops_hedging_openers_but_keeps_the_law_that_follows() -> None:
+    """Verbatim shapes from the 1000-question run; the pivot marks the answer."""
+    cases = {
+        "1": (
+            "Không có thông tin cụ thể về việc Ủy ban nhân dân có được cho thuê "
+            "sân chung cư hay không. Tuy nhiên, theo quy định tại Điều 8 của "
+            "Thông tư 02/2016/TT-BXD, chỗ để xe được quản lý theo hợp đồng."
+        ),
+        "2": (
+            'Câu trả lời cho câu hỏi "Tự ý thôi việc có được bảo lưu không?" là: '
+            "Không có thông tin cụ thể trong các văn bản được cung cấp. "
+            "Tuy nhiên, người lao động được bảo lưu thời gian đóng bảo hiểm."
+        ),
+        # No pivot: stripping the hedge would leave nothing, so it stays.
+        "3": "Không có thông tin cụ thể về nhiệm vụ của Hội viên.",
+    }
+    answers = [
+        GeneratedAnswer(question_id=qid, answer=text, grounded=False)
+        for qid, text in cases.items()
+    ]
+
+    formatted = SubmissionFormatter().format(answers)
+
+    assert formatted["1"].answer == (
+        "Theo quy định tại Điều 8 của Thông tư 02/2016/TT-BXD, "
+        "chỗ để xe được quản lý theo hợp đồng."
+    )
+    assert formatted["2"].answer == (
+        "Người lao động được bảo lưu thời gian đóng bảo hiểm."
+    )
+    assert formatted["3"].answer == cases["3"]

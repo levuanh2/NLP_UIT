@@ -54,6 +54,23 @@ _CONTEXT_LABEL = re.compile(
 # let the punctuation repair below close the gap.
 _CONTEXT_MENTION = re.compile(rf"\s*{_CONTEXT_PHRASE}", flags=re.IGNORECASE)
 # "Văn bản 2 (Ngữ cảnh 2):" is a heading the model invents for the prompt blocks.
+# "Câu trả lời cho câu hỏi "..." là:" restates the prompt before answering.
+_ANSWER_PREAMBLE = re.compile(
+    r"^\s*Câu\s+trả\s+lời\s+(?:cho\s+câu\s+hỏi\s*[\"“”].*?[\"“”]\s*)?"
+    r"là\s*:?\s*",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+# The model sometimes grades the evidence before stating the law: "Không có
+# thông tin cụ thể về X. Tuy nhiên, theo Điều 8 ...". Reference answers never
+# hedge, so the opener shares no tokens with them and splits the METEOR
+# alignment into extra chunks, which the fragmentation penalty cubes. Only the
+# text up to the pivot goes; without a pivot there is nothing left to keep.
+_HEDGE_OPENER = re.compile(
+    r"^.{0,400}?(?:không\s+có\s+thông\s+tin|chưa\s+đủ\s+căn\s+cứ"
+    r"|không\s+tìm\s+thấy|không\s+nêu\s+rõ)"
+    r".{0,400}?Tuy\s+nhiên,\s*",
+    flags=re.IGNORECASE | re.DOTALL,
+)
 _CONTEXT_HEADING = re.compile(
     r"\**\s*Văn bản\s*\d+\s*\**\s*:?\s*", flags=re.IGNORECASE
 )
@@ -122,6 +139,8 @@ def normalize_answer(answer: str) -> str:
     text = _INLINE_BULLET.sub(" ", text)
     text = _LEAD_IN.sub("", text)
     text = _CONTEXT_MENTION.sub("", text)
+    text = _ANSWER_PREAMBLE.sub("", text)
+    text = _HEDGE_OPENER.sub("", text)
     text = _TRUNCATED_SLUG.sub("", text)
     text = _INLINE_SLUG_TAIL.sub(r"\1", text)
     text = _TRAILING_META.sub("", text)
