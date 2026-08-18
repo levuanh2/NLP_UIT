@@ -93,8 +93,11 @@ def main() -> int:
     parser.add_argument("--max-length", type=int, default=5120)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--rank", type=int, default=8)
-    parser.add_argument("--batch-size", type=int, default=2)
-    parser.add_argument("--accumulation", type=int, default=8)
+    # Sequences run 2200-5120 tokens, so a batch of 2 pads the shorter one up
+    # to the longer and spends about a third of the step on padding: 72s
+    # against 56s for one sequence at a time.
+    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--accumulation", type=int, default=16)
     parser.add_argument(
         "--val-fraction",
         type=float,
