@@ -92,8 +92,8 @@ def main() -> int:
     parser.add_argument("--max-length", type=int, default=5120)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--rank", type=int, default=8)
-    parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--accumulation", type=int, default=16)
+    parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument("--accumulation", type=int, default=8)
     parser.add_argument(
         "--val-fraction",
         type=float,
@@ -165,7 +165,10 @@ def main() -> int:
         device_map={"": 0},
     )
     model.config.use_cache = False
-    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    # Fusing the loss freed ~8GB, so activations can be kept rather than
+    # recomputed. Checkpointing was buying memory that is no longer scarce
+    # and charging a second forward pass for it.
+    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
     model = get_peft_model(
         model,
         LoraConfig(
@@ -214,7 +217,7 @@ def main() -> int:
             greater_is_better=False,
             bf16=True,
             optim="paged_adamw_8bit",
-            gradient_checkpointing=True,
+            gradient_checkpointing=False,
             report_to=[],
         ),
         train_dataset=dataset,
