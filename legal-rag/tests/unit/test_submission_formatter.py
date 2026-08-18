@@ -46,10 +46,12 @@ def test_formatter_strips_scaffolding_the_reference_answers_never_contain() -> N
 
     assert "[" not in text and "*" not in text
     assert "\n" not in text
+    # List markers stay: reference answers keep the numbering of the provision
+    # they quote, so dropping ours would misalign every run against them.
     assert text == (
         "Theo, người lao động có quyền. "
-        "Điều kiện: Theo và, phải đủ 18 tuổi. "
-        "Thời hạn là 30 ngày."
+        "1. Điều kiện: Theo và, phải đủ 18 tuổi. "
+        "- Thời hạn là 30 ngày."
     )
 
 
@@ -71,7 +73,7 @@ def test_formatter_strips_prompt_layout_leaks_and_corpus_filenames() -> None:
 
     assert text == (
         "Mẫu thông báo nằm ở các văn bản sau: "
-        "Điều 50 của Luật Doanh nghiệp 2020. "
+        "1. - Điều 50 của Luật Doanh nghiệp 2020. "
         "Theo quy định tại Điều 43, hồ sơ gồm"
     )
 

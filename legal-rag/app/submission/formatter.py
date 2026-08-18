@@ -103,10 +103,12 @@ _TRAILING_META = re.compile(
     flags=re.IGNORECASE,
 )
 _MARKDOWN = re.compile(r"[*_`#]+")
-_LIST_MARKER = re.compile(r"^[ \t]*(?:\d+[.)]|[-•>]+)[ \t]+", flags=re.MULTILINE)
-# Removing a heading can pull a bullet onto the previous line, e.g.
-# "... sau: - Điều 50 ...".
-_INLINE_BULLET = re.compile(r"(?<=[:;.])\s+[-•>]+\s+")
+# Reference answers keep the numbering of the provision they quote: 4328 of
+# 7000 carry a numbered list and 3004 use "-" bullets. Dropping a marker the
+# reference has breaks the alignment there, because the matched reference
+# positions stop being consecutive and each run counts as its own chunk. So
+# markers stay; only ">" quoting, which no reference uses, goes.
+_LIST_MARKER = re.compile(r"^[ 	]*>+[ 	]+", flags=re.MULTILINE)
 _DANGLING = re.compile(r"\s+([,.;:])")
 # Stripping a lead-in can expose the comma that followed it, or empty out a
 # parenthetical that held only metadata.
@@ -136,7 +138,6 @@ def normalize_answer(answer: str) -> str:
     text = _CONTEXT_HEADING.sub("", text)
     text = _MARKDOWN.sub(" ", text)
     text = _LIST_MARKER.sub("", text)
-    text = _INLINE_BULLET.sub(" ", text)
     text = _LEAD_IN.sub("", text)
     text = _CONTEXT_MENTION.sub("", text)
     text = _ANSWER_PREAMBLE.sub("", text)
