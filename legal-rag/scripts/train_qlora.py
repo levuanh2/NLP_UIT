@@ -103,6 +103,14 @@ def main() -> int:
         "adapter is worth keeping is METEOR over the generated dev answers, "
         "which costs a generation each and stays on the 200-question dev set.",
     )
+    parser.add_argument(
+        "--precision",
+        choices=("bf16", "nf4"),
+        default="bf16",
+        help="Base weight format. nf4 is QLoRA and needs ~4GB less, but every "
+        "matmul pays to dequantise. bf16 fits once the loss is fused and runs "
+        "the arithmetic natively.",
+    )
     parser.add_argument("--eval-steps", type=int, default=25)
     parser.add_argument(
         "--patience",
@@ -153,22 +161,27 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001 - training still works without it
         print(f"liger unavailable ({exc}); falling back to standard loss")
 
-    model = loader.from_pretrained(
-        args.model,
-        quantization_config=BitsAndBytesConfig(
+    quantization = None
+    if args.precision == "nf4":
+        quantization = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
             bnb_4bit_use_double_quant=True,
             bnb_4bit_compute_dtype=torch.bfloat16,
-        ),
+        )
+    print(f"base precision: {args.precision}")
+    model = loader.from_pretrained(
+        args.model,
+        quantization_config=quantization,
         dtype=torch.bfloat16,
         device_map={"": 0},
     )
     model.config.use_cache = False
-    # Fusing the loss freed ~8GB, so activations can be kept rather than
-    # recomputed. Checkpointing was buying memory that is no longer scarce
-    # and charging a second forward pass for it.
-    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
+    if args.precision == "nf4":
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    else:
+        model.gradient_checkpointing_enable()
+        model.enable_input_require_grads()
     model = get_peft_model(
         model,
         LoraConfig(
@@ -217,7 +230,7 @@ def main() -> int:
             greater_is_better=False,
             bf16=True,
             optim="paged_adamw_8bit",
-            gradient_checkpointing=False,
+            gradient_checkpointing=True,
             report_to=[],
         ),
         train_dataset=dataset,
