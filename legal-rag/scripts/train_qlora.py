@@ -117,7 +117,16 @@ def main() -> int:
         "speed — 56s a step against 57s — because the card saturates either "
         "way, so nf4 wins on the 6GB it does not spend.",
     )
-    parser.add_argument("--eval-steps", type=int, default=25)
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=400,
+        help="Hard stop, roughly one pass over 6800 examples at an effective "
+        "batch of 16. The epoch bound alone would allow 1181 steps and 18 "
+        "hours, and early stopping cannot be relied on to cut that when the "
+        "validation loss is still falling.",
+    )
+    parser.add_argument("--eval-steps", type=int, default=50)
     parser.add_argument(
         "--patience",
         type=int,
@@ -216,6 +225,7 @@ def main() -> int:
             per_device_train_batch_size=args.batch_size,
             gradient_accumulation_steps=args.accumulation,
             num_train_epochs=args.epochs,
+            max_steps=args.max_steps,
             learning_rate=args.learning_rate,
             # Cosine over a 100-epoch bound would barely decay before early
             # stopping fires, so the schedule is flat with a short warmup.
