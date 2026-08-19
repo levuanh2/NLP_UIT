@@ -31,6 +31,28 @@ ROOT = Path(__file__).resolve().parents[1]
 IGNORE_INDEX = -100
 
 
+class LengthGroupedTrainer(Trainer):
+    """Build batches from sequences of similar length.
+
+    transformers 5 dropped the group_by_length argument but kept the sampler it
+    used, so the wiring moves here. Without it a batch pads every member up to
+    its longest, which is why a batch of 2 measured slower than a batch of 1.
+    """
+
+    def __init__(self, *args, group_lengths: list[int] | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._group_lengths = group_lengths
+
+    def _get_train_sampler(self, train_dataset=None):
+        if not self._group_lengths:
+            return super()._get_train_sampler(train_dataset)
+        from transformers.trainer_pt_utils import LengthGroupedSampler
+
+        return LengthGroupedSampler(
+            self.args.train_batch_size, lengths=self._group_lengths
+        )
+
+
 class AnswerOnlyDataset(torch.utils.data.Dataset):
     """Grounded prompt in, expert answer out, with the prompt masked from the loss."""
 
@@ -251,8 +273,13 @@ def main() -> int:
         )
     model.print_trainable_parameters()
 
-    trainer = Trainer(
+    group_lengths = None
+    if args.group_by_length:
+        group_lengths = [dataset[i]["length"] for i in range(len(dataset))]
+
+    trainer = LengthGroupedTrainer(
         model=model,
+        group_lengths=group_lengths,
         args=TrainingArguments(
             output_dir=str(args.output),
             per_device_train_batch_size=args.batch_size,
@@ -268,8 +295,6 @@ def main() -> int:
             eval_strategy="steps" if validation else "no",
             eval_steps=args.eval_steps,
             per_device_eval_batch_size=args.batch_size,
-            group_by_length=args.group_by_length,
-            length_column_name="length",
             # load_best_model_at_end needs saves on the same cadence as evals.
             save_strategy="steps" if validation else "epoch",
             save_steps=args.eval_steps,
