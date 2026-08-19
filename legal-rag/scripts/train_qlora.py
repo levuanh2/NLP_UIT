@@ -120,6 +120,13 @@ def main() -> int:
         "way, so nf4 wins on the 6GB it does not spend.",
     )
     parser.add_argument(
+        "--scheduler",
+        default="constant_with_warmup",
+        help="Learning-rate schedule. Cosine only decays meaningfully against a "
+        "known horizon, which max_steps now provides; under the old epoch bound "
+        "a run that stopped early left the curve 3% travelled.",
+    )
+    parser.add_argument(
         "--max-steps",
         type=int,
         default=400,
