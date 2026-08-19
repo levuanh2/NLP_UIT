@@ -160,8 +160,9 @@ def test_qwen_conversation_preserves_grounded_prompt_roles() -> None:
     ).build("Điều kiện là gì?", retrieval())
     conversation = QwenGenerator._conversation(prompt)
     assert [message["role"] for message in conversation] == ["system", "user"]
-    assert "Trích NGUYÊN VĂN nội dung điều khoản trong Ngữ cảnh" in (
-        conversation[0]["content"]
+    assert (
+        "Trích NGUYÊN VĂN nội dung điều khoản trong Ngữ cảnh"
+        in (conversation[0]["content"])
     )
     assert conversation[1]["content"].startswith(
         "CONTEXT:\n### Ngữ cảnh:\n[1]\nDOCUMENT:"
@@ -511,9 +512,7 @@ def test_repaired_answer_is_revalidated() -> None:
 
 def test_no_repair_when_no_evidence() -> None:
     llm = ScriptedLocalLLM([])
-    result = pipeline_with_repair(llm).generate(
-        generation_request(with_evidence=False)
-    )
+    result = pipeline_with_repair(llm).generate(generation_request(with_evidence=False))
     assert llm.calls == 0
     assert result.abstained is True
 
@@ -567,3 +566,49 @@ def test_generator_reports_an_adapter_it_cannot_load(tmp_path) -> None:
 
     with pytest.raises(ConfigurationError, match="Could not attach adapter"):
         generator._attach_adapter()
+
+
+def test_batching_produces_the_same_answers_as_one_at_a_time() -> None:
+    """Pooling the decode must not change what comes out, only how fast."""
+    requests = [
+        GenerationRequest(
+            question_id=str(index),
+            question=f"Điều kiện {index} là gì?",
+            retrieval_result=retrieval(),
+        )
+        for index in range(3)
+    ]
+
+    one_by_one = pipeline(MockLocalLLM("Theo Điều 37, doanh nghiệp phải đăng ký."))
+    pooled = pipeline(MockLocalLLM("Theo Điều 37, doanh nghiệp phải đăng ký."))
+
+    serial = [one_by_one.generate(request) for request in requests]
+    batched = pooled.generate_batch(requests)
+
+    assert [a.question_id for a in batched] == [a.question_id for a in serial]
+    assert [a.answer for a in batched] == [a.answer for a in serial]
+    assert [a.grounded for a in batched] == [a.grounded for a in serial]
+
+
+def test_batching_keeps_abstentions_in_their_original_position() -> None:
+    """A question with no evidence never reaches the model; order must survive."""
+    requests = [
+        GenerationRequest(
+            question_id="a", question="Câu 1", retrieval_result=retrieval()
+        ),
+        GenerationRequest(
+            question_id="b",
+            question="Câu 2",
+            retrieval_result=retrieval(with_evidence=False),
+        ),
+        GenerationRequest(
+            question_id="c", question="Câu 3", retrieval_result=retrieval()
+        ),
+    ]
+    llm = MockLocalLLM("Theo Điều 37, doanh nghiệp phải đăng ký.")
+
+    answers = pipeline(llm).generate_batch(requests)
+
+    assert [a.question_id for a in answers] == ["a", "b", "c"]
+    assert answers[1].abstained is True
+    assert llm.calls == 2

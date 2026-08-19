@@ -115,6 +115,14 @@ class Settings(BaseSettings):
         ),
     )
     llm_max_context_tokens: int = Field(default=4096, gt=0)
+    # Questions answered in one decode pass. Decoding reads the whole weight
+    # matrix per token, so a batch amortises that read; the batch runs until
+    # its longest member stops, which caps how much a large one helps.
+    llm_batch_size: int = Field(
+        default=1,
+        ge=1,
+        validation_alias=AliasChoices("LLM_BATCH_SIZE", "BATCH_SIZE"),
+    )
     llm_citation_repair_enabled: bool = True
     llm_citation_repair_max_retries: int = Field(default=1, ge=0, le=1)
     generation_trace: bool = False

@@ -47,11 +47,11 @@ class GenerationPipeline:
         if trace and hasattr(generator, "debug_enabled"):
             generator.debug_enabled = True
 
-    def generate(self, request: GenerationRequest) -> GeneratedAnswer:
-        """Build bounded context, invoke the local model, and validate output."""
+    def _prepare(self, request: GenerationRequest):
+        """Return (prompt, abstention, build_seconds); exactly one of the first two."""
         retrieval = request.retrieval_result
         if self.abstention_validator.should_abstain(retrieval):
-            return self._abstention(request, "No usable retrieval evidence.")
+            return None, self._abstention(request, "No usable retrieval evidence."), 0.0
         prompt_started = time.perf_counter()
         grounded_prompt = self.prompt_builder.prepare(
             request.question,
@@ -60,8 +60,13 @@ class GenerationPipeline:
         )
         prompt_build_seconds = time.perf_counter() - prompt_started
         if not grounded_prompt.evidences:
-            return self._abstention(
-                request, "No complete evidence block fits the model context window."
+            return (
+                None,
+                self._abstention(
+                    request,
+                    "No complete evidence block fits the model context window.",
+                ),
+                prompt_build_seconds,
             )
         self._trace(
             "prompt",
@@ -71,12 +76,55 @@ class GenerationPipeline:
             prompt_token_count=grounded_prompt.token_count,
             context_token_count=grounded_prompt.context_token_count,
             evidence_count=len(grounded_prompt.evidences),
-            parent_count=len(
-                {item.parent_id for item in grounded_prompt.evidences}
-            ),
+            parent_count=len({item.parent_id for item in grounded_prompt.evidences}),
             prompt_build_seconds=prompt_build_seconds,
             model_name=getattr(self.generator, "model_name", "injected-local-model"),
         )
+        return grounded_prompt, None, prompt_build_seconds
+
+    def generate(self, request: GenerationRequest) -> GeneratedAnswer:
+        """Build bounded context, invoke the local model, and validate output."""
+        grounded_prompt, abstention, prompt_build_seconds = self._prepare(request)
+        if grounded_prompt is None:
+            return abstention
+        raw_answer, original_latency = self._invoke(grounded_prompt)
+        return self._finish(
+            request, grounded_prompt, raw_answer, original_latency,
+            prompt_build_seconds,
+        )
+
+    def generate_batch(
+        self, requests: list[GenerationRequest]
+    ) -> list[GeneratedAnswer]:
+        """Answer several requests, sharing one decode pass across them.
+
+        Retrieval and validation stay per request; only the model call is
+        pooled, because that is the part bound by reading weights out of VRAM.
+        """
+        prepared = [self._prepare(request) for request in requests]
+        pending = [i for i, p in enumerate(prepared) if p[0] is not None]
+        answers: list[GeneratedAnswer | None] = [p[1] for p in prepared]
+        if not pending:
+            return [a for a in answers if a is not None]
+
+        started = time.perf_counter()
+        raw = self.generator.generate_many(
+            [prepared[i][0].prompt for i in pending],
+            max_new_tokens=self.max_new_tokens,
+            temperature=self.temperature,
+        )
+        # One wall-clock reading covers the whole batch, so each member is
+        # charged its share rather than the total.
+        share = (time.perf_counter() - started) / len(pending)
+        for position, index in enumerate(pending):
+            grounded_prompt, _, build_seconds = prepared[index]
+            answers[index] = self._finish(
+                requests[index], grounded_prompt, raw[position].strip(),
+                share, build_seconds,
+            )
+        return [a for a in answers if a is not None]
+
+    def _invoke(self, grounded_prompt) -> tuple[str, float]:
         started = time.perf_counter()
         raw_answer = self.generator.generate(
             grounded_prompt.prompt,
@@ -84,7 +132,17 @@ class GenerationPipeline:
             temperature=self.temperature,
         ).strip()
         self._trace_model_io(attempt=0)
-        original_latency = time.perf_counter() - started
+        return raw_answer, time.perf_counter() - started
+
+    def _finish(
+        self,
+        request: GenerationRequest,
+        grounded_prompt,
+        raw_answer: str,
+        original_latency: float,
+        prompt_build_seconds: float,
+    ) -> GeneratedAnswer:
+        retrieval = request.retrieval_result
         validation_started = time.perf_counter()
         citations, grounding, errors = self._validate(
             raw_answer, retrieval, grounded_prompt.evidences

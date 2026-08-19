@@ -29,6 +29,7 @@ class SubmissionService:
         fallback_answer: str | None = None,
         failure_path: Path | None = None,
         require_grounded: bool = True,
+        batch_size: int = 1,
     ) -> None:
         self.rag_service = rag_service
         self.formatter = formatter
@@ -40,6 +41,58 @@ class SubmissionService:
         self.fallback_answer = fallback_answer
         self.failure_path = failure_path
         self.require_grounded = require_grounded
+        self.batch_size = max(1, batch_size)
+
+    def _chunks(self, questions: list[LegalQuery]) -> list[list[LegalQuery]]:
+        if self.batch_size <= 1:
+            return [[question] for question in questions]
+        return [
+            questions[i : i + self.batch_size]
+            for i in range(0, len(questions), self.batch_size)
+        ]
+
+    def _answer_chunk(self, chunk: list[LegalQuery]):
+        """Return (question, answer-or-exception, seconds) for one chunk."""
+        started = time.perf_counter()
+        try:
+            if len(chunk) == 1:
+                produced = [self.rag_service.answer(chunk[0])]
+            else:
+                produced = self.rag_service.answer_batch(chunk)
+        except Exception as exc:  # noqa: BLE001 - one bad chunk must not end the run
+            if self.fail_fast:
+                raise
+            return [(question, exc, 0.0) for question in chunk]
+        share = (time.perf_counter() - started) / max(1, len(chunk))
+        by_id = {answer.question_id: answer for answer in produced}
+        rows = []
+        for question in chunk:
+            answer = by_id.get(question.question_id)
+            if answer is None:
+                rows.append((question, RuntimeError("no answer returned"), share))
+            else:
+                rows.append((question, answer, share))
+        return rows
+
+    def _record_failure(self, question, exc, processing_errors, answers) -> None:
+        message = f"Question {question.question_id} failed: {exc}"
+        if self.fail_fast:
+            raise RuntimeError(message) from exc
+        if self.fallback_answer is None:
+            processing_errors.append(message)
+            return
+        # ponytail: the submission must carry all expected IDs, so a failed
+        # question abstains instead of voiding the whole file. Deliberately not
+        # checkpointed, so a rerun retries it.
+        self.failures.append(message)
+        self._append_failure(question.question_id, str(exc))
+        answers.append(
+            GeneratedAnswer(
+                question_id=question.question_id,
+                answer=self.fallback_answer,
+                grounded=False,
+            )
+        )
 
     def create(
         self, questions: list[LegalQuery], output_path: Path
@@ -48,13 +101,13 @@ class SubmissionService:
         done = {answer.question_id for answer in answers}
         processing_errors: list[str] = []
         self.failures: list[str] = []
-        for question in questions:
-            if question.question_id in done:
-                continue
-            try:
-                started = time.perf_counter()
-                answer = self.rag_service.answer(question)
-                elapsed = time.perf_counter() - started
+        pending = [q for q in questions if q.question_id not in done]
+        for chunk in self._chunks(pending):
+            produced = self._answer_chunk(chunk)
+            for question, answer, elapsed in produced:
+                if isinstance(answer, Exception):
+                    self._record_failure(question, answer, processing_errors, answers)
+                    continue
                 if self.progress_callback:
                     self.progress_callback(question, answer, elapsed)
                 # METEOR/ROUGE-L reward token overlap and never penalise
@@ -62,28 +115,15 @@ class SubmissionService:
                 # grounding error trades score for nothing.
                 if self.require_grounded and not answer.grounded:
                     detail = "; ".join(answer.validation_errors) or "not grounded"
-                    raise RuntimeError(f"Generated answer failed validation: {detail}")
+                    self._record_failure(
+                        question,
+                        RuntimeError(f"Generated answer failed validation: {detail}"),
+                        processing_errors,
+                        answers,
+                    )
+                    continue
                 self._append_checkpoint(answer)
                 answers.append(answer)
-            except Exception as exc:
-                message = f"Question {question.question_id} failed: {exc}"
-                if self.fail_fast:
-                    raise RuntimeError(message) from exc
-                if self.fallback_answer is None:
-                    processing_errors.append(message)
-                    continue
-                # ponytail: the submission must carry all expected IDs, so a
-                # failed question abstains instead of voiding the whole file.
-                # Deliberately not checkpointed, so a rerun retries it.
-                self.failures.append(message)
-                self._append_failure(question.question_id, str(exc))
-                answers.append(
-                    GeneratedAnswer(
-                        question_id=question.question_id,
-                        answer=self.fallback_answer,
-                        grounded=False,
-                    )
-                )
         submission = self.formatter.format(answers)
         payload = {
             question_id: answer.model_dump()

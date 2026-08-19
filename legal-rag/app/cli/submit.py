@@ -99,6 +99,7 @@ def submit(
         fallback_answer=ABSTENTION_ANSWER if abstain_on_failure else None,
         failure_path=output_path.with_suffix(".failures.jsonl"),
         require_grounded=require_grounded,
+        batch_size=settings.llm_batch_size,
     )
     try:
         result = service.create(dataset, output_path)

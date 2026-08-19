@@ -50,3 +50,15 @@ def test_llm_prefixed_generation_settings_are_read(monkeypatch) -> None:
     assert settings.min_new_tokens == 700
     assert settings.max_new_tokens == 1100
     assert settings.repetition_penalty == 1.3
+
+
+def test_batch_size_defaults_to_one_and_reads_its_alias(monkeypatch) -> None:
+    from app.core.config import Settings
+
+    kwargs = dict(
+        llm_model_name="m", embedding_model_name="e", reranker_model_name="r"
+    )
+    assert Settings(**kwargs).llm_batch_size == 1
+
+    monkeypatch.setenv("LLM_BATCH_SIZE", "8")
+    assert Settings(**kwargs).llm_batch_size == 8

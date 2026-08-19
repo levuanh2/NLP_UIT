@@ -221,6 +221,92 @@ class QwenGenerator(BaseLLMGenerator):
                     ]
         return [{"role": "user", "content": prompt}]
 
+    def generate_many(
+        self,
+        prompts: list[str],
+        *,
+        max_new_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> list[str]:
+        """Answer several prompts in one forward pass per token.
+
+        Decoding is bound by memory bandwidth, not arithmetic: every token reads
+        the whole weight matrix back out of VRAM to multiply it by one vector.
+        A batch reads those weights once and multiplies them by N vectors, so the
+        expensive half is shared. The batch runs until its longest member stops,
+        which is why callers should group prompts of similar length.
+        """
+        if not prompts:
+            return []
+        if len(prompts) == 1:
+            return [self.generate(prompts[0], max_new_tokens=max_new_tokens,
+                                  temperature=temperature)]
+        model, tokenizer = self._require_loaded()
+        import torch
+
+        requested_tokens = max_new_tokens or self.max_new_tokens
+        if requested_tokens <= 0:
+            raise ValueError("max_new_tokens must be positive")
+
+        rendered = [
+            tokenizer.apply_chat_template(
+                self._conversation(prompt), tokenize=False, add_generation_prompt=True
+            )
+            for prompt in prompts
+        ]
+        # Generation continues from the right edge, so the padding goes left;
+        # right padding would have the model continue from pad tokens.
+        previous_side = tokenizer.padding_side
+        tokenizer.padding_side = "left"
+        try:
+            encoded = tokenizer(
+                rendered, return_tensors="pt", padding=True, truncation=False
+            )
+        finally:
+            tokenizer.padding_side = previous_side
+
+        width = int(encoded["input_ids"].shape[-1])
+        limit = self._model_context_limit(model, tokenizer)
+        if width + requested_tokens > limit:
+            raise RuntimeError(
+                "Batched prompt exceeds local model context window: "
+                f"prompt={width}, generation={requested_tokens}, limit={limit}"
+            )
+        encoded = {k: v.to(self._resolved_device) for k, v in encoded.items()}
+
+        options: dict[str, Any] = {
+            "max_new_tokens": requested_tokens,
+            "do_sample": self.do_sample,
+            "pad_token_id": tokenizer.pad_token_id,
+            "eos_token_id": tokenizer.eos_token_id,
+            "min_new_tokens": self.min_new_tokens,
+            "repetition_penalty": self.repetition_penalty,
+        }
+        if self.do_sample:
+            options.update(
+                temperature=self.temperature if temperature is None else temperature,
+                top_p=self.top_p,
+            )
+
+        started = time.perf_counter()
+        with torch.inference_mode():
+            output = model.generate(**encoded, **options)
+        elapsed = time.perf_counter() - started
+
+        answers = [
+            tokenizer.decode(row[width:], skip_special_tokens=True).strip()
+            for row in output
+        ]
+        generated = int(output.shape[-1]) - width
+        self.last_generation_metrics = GenerationMetrics(
+            input_tokens=width * len(prompts),
+            generated_tokens=generated * len(prompts),
+            tokenize_seconds=0.0,
+            generation_seconds=elapsed,
+            decode_seconds=0.0,
+        )
+        return answers
+
     def count_tokens(self, text: str) -> int:
         _, tokenizer = self._require_loaded()
         return len(tokenizer.encode(text, add_special_tokens=True))

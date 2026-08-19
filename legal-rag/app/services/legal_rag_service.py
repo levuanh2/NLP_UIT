@@ -15,6 +15,18 @@ class LegalRAGService:
         self.retrieval_pipeline = retrieval_pipeline
         self.generation_pipeline = generation_pipeline
 
+    def answer_batch(self, queries: list[LegalQuery]) -> list[GeneratedAnswer]:
+        """Retrieve for each query, then answer them all in one decode pass."""
+        requests = [
+            GenerationRequest(
+                question_id=query.question_id,
+                question=query.question,
+                retrieval_result=self.retrieval_pipeline.retrieve(query),
+            )
+            for query in queries
+        ]
+        return self.generation_pipeline.generate_batch(requests)
+
     def answer(self, query: LegalQuery) -> GeneratedAnswer:
         """Retrieve legal evidence and generate a grounded answer."""
         retrieval_result = self.retrieval_pipeline.retrieve(query)
