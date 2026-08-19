@@ -126,6 +126,15 @@ def main() -> int:
         "hours, and early stopping cannot be relied on to cut that when the "
         "validation loss is still falling.",
     )
+    parser.add_argument(
+        "--init-adapter",
+        type=Path,
+        help="Continue training an existing adapter instead of starting from "
+        "zero. Its rank and target modules come from its own config, so --rank "
+        "is ignored. B is initialised to zero on a fresh adapter, which is why "
+        "a cold start needs warmup; a warm start already contributes from the "
+        "first step.",
+    )
     parser.add_argument("--eval-steps", type=int, default=50)
     parser.add_argument(
         "--patience",
@@ -197,25 +206,33 @@ def main() -> int:
     else:
         model.gradient_checkpointing_enable()
         model.enable_input_require_grads()
-    model = get_peft_model(
-        model,
-        LoraConfig(
-            r=args.rank,
-            lora_alpha=args.rank * 2,
-            lora_dropout=0.05,
-            bias="none",
-            task_type="CAUSAL_LM",
-            target_modules=[
-                "q_proj",
-                "k_proj",
-                "v_proj",
-                "o_proj",
-                "gate_proj",
-                "up_proj",
-                "down_proj",
-            ],
-        ),
-    )
+    if args.init_adapter:
+        from peft import PeftModel
+
+        print(f"continuing from adapter {args.init_adapter}")
+        model = PeftModel.from_pretrained(
+            model, str(args.init_adapter), is_trainable=True
+        )
+    else:
+        model = get_peft_model(
+            model,
+            LoraConfig(
+                r=args.rank,
+                lora_alpha=args.rank * 2,
+                lora_dropout=0.05,
+                bias="none",
+                task_type="CAUSAL_LM",
+                target_modules=[
+                    "q_proj",
+                    "k_proj",
+                    "v_proj",
+                    "o_proj",
+                    "gate_proj",
+                    "up_proj",
+                    "down_proj",
+                ],
+            ),
+        )
     model.print_trainable_parameters()
 
     trainer = Trainer(
