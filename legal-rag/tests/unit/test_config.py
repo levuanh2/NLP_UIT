@@ -30,3 +30,23 @@ def test_yaml_config_has_mapping_root(tmp_path: Path) -> None:
 
     # Assert
     assert config == {"section": {"enabled": True}}
+
+
+def test_llm_prefixed_generation_settings_are_read(monkeypatch) -> None:
+    """.env documents LLM_ prefixes; a field without the alias silently ignores them."""
+    from app.core.config import Settings
+
+    for name, value in (
+        ("LLM_MIN_NEW_TOKENS", "700"),
+        ("LLM_MAX_NEW_TOKENS", "1100"),
+        ("LLM_REPETITION_PENALTY", "1.3"),
+    ):
+        monkeypatch.setenv(name, value)
+
+    settings = Settings(
+        llm_model_name="m", embedding_model_name="e", reranker_model_name="r"
+    )
+
+    assert settings.min_new_tokens == 700
+    assert settings.max_new_tokens == 1100
+    assert settings.repetition_penalty == 1.3

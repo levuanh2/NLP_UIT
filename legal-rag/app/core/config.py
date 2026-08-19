@@ -102,8 +102,18 @@ class Settings(BaseSettings):
         default=False,
         validation_alias=AliasChoices("LLM_DO_SAMPLE", "DO_SAMPLE"),
     )
-    min_new_tokens: int = Field(default=0, ge=0)
-    repetition_penalty: float = Field(default=1.1, gt=0)
+    min_new_tokens: int = Field(
+        default=0,
+        ge=0,
+        validation_alias=AliasChoices("LLM_MIN_NEW_TOKENS", "MIN_NEW_TOKENS"),
+    )
+    repetition_penalty: float = Field(
+        default=1.1,
+        gt=0,
+        validation_alias=AliasChoices(
+            "LLM_REPETITION_PENALTY", "REPETITION_PENALTY"
+        ),
+    )
     llm_max_context_tokens: int = Field(default=4096, gt=0)
     llm_citation_repair_enabled: bool = True
     llm_citation_repair_max_retries: int = Field(default=1, ge=0, le=1)
