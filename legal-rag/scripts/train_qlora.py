@@ -227,9 +227,7 @@ def main() -> int:
             num_train_epochs=args.epochs,
             max_steps=args.max_steps,
             learning_rate=args.learning_rate,
-            # Cosine over a 100-epoch bound would barely decay before early
-            # stopping fires, so the schedule is flat with a short warmup.
-            lr_scheduler_type="constant_with_warmup",
+            lr_scheduler_type=args.scheduler,
             # transformers 5 dropped warmup_ratio; with a 100-epoch bound a
             # ratio was meaningless anyway, so warmup is a flat step count.
             warmup_steps=20,
