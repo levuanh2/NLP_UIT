@@ -124,7 +124,7 @@ def main() -> int:
         default="constant_with_warmup",
         help="Learning-rate schedule. Cosine only decays meaningfully against a "
         "known horizon, which max_steps now provides; under the old epoch bound "
-        "a run that stopped early left the curve 3% travelled.",
+        "a run that stopped early left the curve 3%% travelled.",
     )
     parser.add_argument(
         "--max-steps",
