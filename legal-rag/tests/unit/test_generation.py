@@ -3,7 +3,7 @@
 import pytest
 
 from app.core.exceptions import ConfigurationError
-from app.domain.generation import GenerationRequest
+from app.domain.generation import GenerationMetrics, GenerationRequest
 from app.domain.queries import QueryMetadata
 from app.domain.retrieval import LegalEvidence, RetrievalResult
 from app.generation.citation_repair import CitationRepair
@@ -612,3 +612,28 @@ def test_batching_keeps_abstentions_in_their_original_position() -> None:
     assert [a.question_id for a in answers] == ["a", "b", "c"]
     assert answers[1].abstained is True
     assert llm.calls == 2
+
+
+def test_build_metrics_fills_every_field() -> None:
+    """generate and generate_many share this, so neither can omit a field."""
+    from app.generation.llm.qwen_generator import build_metrics
+
+    metrics = build_metrics(
+        input_tokens=1200,
+        max_new_tokens=500,
+        generated_tokens=400,
+        generation_seconds=8.0,
+    )
+
+    assert metrics.tokens_per_second == 50.0
+    assert metrics.model_dump().keys() == GenerationMetrics.model_fields.keys()
+
+
+def test_build_metrics_survives_a_zero_duration() -> None:
+    from app.generation.llm.qwen_generator import build_metrics
+
+    metrics = build_metrics(
+        input_tokens=1, max_new_tokens=1, generated_tokens=1, generation_seconds=0.0
+    )
+
+    assert metrics.tokens_per_second == 0.0

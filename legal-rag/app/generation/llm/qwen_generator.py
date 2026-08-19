@@ -10,6 +10,29 @@ from app.domain.generation import GenerationMetrics
 from app.generation.llm.base import BaseLLMGenerator
 
 
+def build_metrics(
+    *,
+    input_tokens: int,
+    max_new_tokens: int,
+    generated_tokens: int,
+    generation_seconds: float,
+    tokenize_seconds: float = 0.0,
+    decode_seconds: float = 0.0,
+) -> GenerationMetrics:
+    """One place that knows the metric fields, so a second caller cannot miss one."""
+    return GenerationMetrics(
+        input_tokens=input_tokens,
+        max_new_tokens=max_new_tokens,
+        generated_tokens=generated_tokens,
+        tokenize_seconds=tokenize_seconds,
+        generation_seconds=generation_seconds,
+        decode_seconds=decode_seconds,
+        tokens_per_second=(
+            generated_tokens / generation_seconds if generation_seconds else 0.0
+        ),
+    )
+
+
 class QwenGenerator(BaseLLMGenerator):
     def __init__(
         self,
@@ -187,16 +210,13 @@ class QwenGenerator(BaseLLMGenerator):
             if self.debug_enabled
             else None
         )
-        self.last_generation_metrics = GenerationMetrics(
+        self.last_generation_metrics = build_metrics(
             input_tokens=input_tokens,
             max_new_tokens=requested_tokens,
             generated_tokens=generated_tokens,
             tokenize_seconds=tokenize_seconds,
             generation_seconds=generation_seconds,
             decode_seconds=decode_seconds,
-            tokens_per_second=(
-                generated_tokens / generation_seconds if generation_seconds else 0.0
-            ),
         )
         if not answer:
             raise RuntimeError("Local LLM returned an empty answer")
@@ -298,12 +318,11 @@ class QwenGenerator(BaseLLMGenerator):
             for row in output
         ]
         generated = int(output.shape[-1]) - width
-        self.last_generation_metrics = GenerationMetrics(
+        self.last_generation_metrics = build_metrics(
             input_tokens=width * len(prompts),
+            max_new_tokens=requested_tokens,
             generated_tokens=generated * len(prompts),
-            tokenize_seconds=0.0,
             generation_seconds=elapsed,
-            decode_seconds=0.0,
         )
         return answers
 
