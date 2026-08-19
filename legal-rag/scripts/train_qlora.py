@@ -52,6 +52,8 @@ class AnswerOnlyDataset(torch.utils.data.Dataset):
                 {
                     "input_ids": prompt_ids + answer_ids,
                     "labels": [IGNORE_INDEX] * len(prompt_ids) + answer_ids,
+                    # LengthGroupedSampler reads this to keep a batch uniform.
+                    "length": len(prompt_ids) + len(answer_ids),
                 }
             )
 
@@ -63,7 +65,7 @@ class AnswerOnlyDataset(torch.utils.data.Dataset):
 
 
 def collate(batch: list[dict], pad_token_id: int) -> dict:
-    width = max(len(item["input_ids"]) for item in batch)
+    width = max(len(item["input_ids"]) for item in batch)  # "length" is sampler-only
     input_ids, labels, attention = [], [], []
     for item in batch:
         padding = width - len(item["input_ids"])
@@ -134,6 +136,13 @@ def main() -> int:
         "is ignored. B is initialised to zero on a fresh adapter, which is why "
         "a cold start needs warmup; a warm start already contributes from the "
         "first step.",
+    )
+    parser.add_argument(
+        "--group-by-length",
+        action="store_true",
+        help="Sort similar-length sequences into the same batch. Without it a "
+        "batch pads every member up to its longest, which is why a batch of 2 "
+        "measured slower than a batch of 1: 72s a step against 56s.",
     )
     parser.add_argument("--eval-steps", type=int, default=50)
     parser.add_argument(
@@ -252,6 +261,8 @@ def main() -> int:
             eval_strategy="steps" if validation else "no",
             eval_steps=args.eval_steps,
             per_device_eval_batch_size=args.batch_size,
+            group_by_length=args.group_by_length,
+            length_column_name="length",
             # load_best_model_at_end needs saves on the same cadence as evals.
             save_strategy="steps" if validation else "epoch",
             save_steps=args.eval_steps,
