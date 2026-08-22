@@ -20,6 +20,18 @@ from app.evaluation.generation_metrics import meteor, rouge_l
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def read_failures(submission_path: Path) -> list[dict]:
+    """Generation failures logged next to the submission, if any."""
+    path = submission_path.parent / "submission.failures.jsonl"
+    if not path.is_file():
+        return []
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--train", type=Path, default=ROOT / "data/train/train.json")
@@ -29,6 +41,11 @@ def main() -> int:
     )
     parser.add_argument("--score", type=Path, help="Submission JSON to score.")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--allow-failures",
+        action="store_true",
+        help="Score even though generation crashed on some questions.",
+    )
     parser.add_argument(
         "--worst", type=int, default=5, help="Show the N worst answers."
     )
@@ -51,6 +68,23 @@ def main() -> int:
 
     if not args.score:
         parser.error("pass --make N or --score <submission.json>")
+
+    failures = read_failures(args.score)
+    if failures and not args.allow_failures:
+        counts: dict[str, int] = {}
+        for row in failures:
+            kind = row.get("failure_type", "GENERATION_ERROR")
+            counts[kind] = counts.get(kind, 0) + 1
+        print(f"STATUS: INVALID - {len(failures)} question(s) failed to generate")
+        for kind, count in sorted(counts.items()):
+            print(f"  {kind}: {count}")
+        print(
+            "A crashed question still carries the abstention text, so scoring "
+            "this run would average real answers with crashes and report a "
+            "number that means nothing. Re-run the failed questions, or pass "
+            "--allow-failures to score it knowingly."
+        )
+        return 3
 
     submission = json.loads(args.score.read_text(encoding="utf-8"))
     missing = [qid for qid in submission if qid not in train]

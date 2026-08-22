@@ -1,0 +1,51 @@
+{
+  "checkpoint": "models/qlora-lr5e4/checkpoint-350",
+  "base_model": "AITeamVN/Vi-Qwen2-3B-RAG",
+  "index": "storage/index-staging/v1-enriched",
+  "reranker_top_k": 20,
+  "meteor_dev200": 0.4880,
+  "rouge_l_dev200": 0.3345,
+  "official_submission": "v5",
+  "official_meteor": 0.4223,
+  "official_rouge_l": 0.4235,
+  "status": "frozen_candidate",
+
+  "frozen_at": "2026-08-21T11:40:00+07:00",
+  "lora": {"r": 8, "lora_alpha": 16, "lora_dropout": 0.05, "peft_type": "LORA", "task_type": "CAUSAL_LM",
+           "target_modules": ["o_proj","k_proj","q_proj","gate_proj","up_proj","down_proj","v_proj"]},
+  "adapter_sha256": {
+    "adapter_model.safetensors": "8c4f3d3cfaa2795d29f1ec57286c5b259e7a50030eb5d172be7b297500cf73bf",
+    "adapter_config.json": "dc39e52a8efd48872a0b5345e6f5308990dc05e58efd61ad711b6691fab2deb7"
+  },
+  "adapter_verified_identical_local_and_box": true,
+  "index_fingerprint_sha256_of_size_path_listing": "c37d8535afddd20cad94f274a9f029837f0f0cc00c608e79de00e2029aff4f69",
+  "index_file_count": 4,
+  "index_bytes": 1204187790,
+  "generation": {
+    "llm_min_new_tokens": 500,
+    "llm_max_new_tokens": 1100,
+    "llm_batch_size": 1,
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "do_sample": false,
+    "repetition_penalty": 1.1,
+    "context_max_tokens": 10000
+  },
+  "production_safety": {
+    "env_sha256": "7ef96c552818e7ef87068a382cd75f25efe52a242ef293cae644cd1723104443",
+    "current_index_name": "v1",
+    "current_marker_sha256": "2d27fbdf4e8ca207afbfa388ca9172fbcc6c70e534af2476b3b704f87debadcf",
+    "staging_current_name": "v1-enriched",
+    "git_commit": "cd8a79e0932ff98d65d23fb323a6f3740b816d15",
+    "git_dirty_paths_box": 27,
+    "note": "The candidate index lives in storage/index-staging and is NOT published. CURRENT still points at v1. Nothing is committed."
+  },
+  "provenance": {
+    "dev200_run_dir": "data/outputs/dev200-enriched-k20-ckpt350",
+    "dev200_n": 200,
+    "dev200_failed": 0,
+    "official_scored_by": "BTC leaderboard, submission v5",
+    "note": "meteor_dev200 and official_meteor are different question sets and are NOT comparable; the observed dev200->leaderboard discount ratio across v4->v5 was 0.60."
+  },
+  "replacement_rule": "Replace only on a VALID dev200 run (200/200 answered, 0 failed, 0 abstentions) whose METEOR exceeds 0.4880 by more than the n=200 standard error of +-0.028."
+}

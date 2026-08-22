@@ -114,6 +114,19 @@ class Settings(BaseSettings):
             "LLM_REPETITION_PENALTY", "REPETITION_PENALTY"
         ),
     )
+    # A greedy decode can fall into a short cycle ("Điều 5.2.1.1.1.1...") that
+    # repetition_penalty 1.1 does not break, because each step still picks the
+    # least-penalised token in the cycle. Blocking a repeated n-gram breaks it
+    # outright. Keep n large: a cycle repeats every n-gram, while a legitimate
+    # verbatim quote of the same provision twice rarely runs 20 tokens.
+    # 0 disables it.
+    no_repeat_ngram_size: int = Field(
+        default=0,
+        ge=0,
+        validation_alias=AliasChoices(
+            "LLM_NO_REPEAT_NGRAM_SIZE", "NO_REPEAT_NGRAM_SIZE"
+        ),
+    )
     llm_max_context_tokens: int = Field(default=4096, gt=0)
     # Questions answered in one decode pass. Decoding reads the whole weight
     # matrix per token, so a batch amortises that read; the batch runs until

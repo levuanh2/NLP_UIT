@@ -1,0 +1,14 @@
+{
+  "experiment": "V6",
+  "checkpoint": "models/qlora-lr5e4/checkpoint-350",
+  "LoRA": "r=8, alpha=16, dropout=0.05",
+  "index": "storage/index-staging/v1-enriched",
+  "dense_top_k": 50,
+  "bm25_top_k": 50,
+  "rrf_top_k": 100,
+  "reranker_top_k": 40,
+  "floor": 500,
+  "prompt": "V6_INTERNAL_EVIDENCE_IDENTIFICATION",
+  "context_budget": 10000,
+  "neighbor_window": 1
+}

@@ -6,6 +6,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import aliased
 
+from app.domain import legal_identifier
 from app.domain.chunks import ChildChunk, ParentChunk
 from app.domain.documents import LegalDocument
 from app.domain.metadata import LegalMetadata
@@ -157,14 +158,38 @@ class LegalRepository:
             ).all()
             return [self._child(record) for record in records]
 
+    def document_ids_for_identifier(self, identifier: str) -> set[int]:
+        """Documents whose slug carries this canonical legal identifier.
+
+        Stored names are URL slugs ("Thong-tu-17-2022-TT-BGTVT-...-522401"), so
+        the identifier is folded to its slug form and anchored on the leading
+        hyphen: without the anchor "17-2022-TT-BGTVT" also matches "117-2022-...".
+        """
+        fragment = legal_identifier.escape_like(
+            legal_identifier.slug_fragment(identifier)
+        )
+        with self.database.session() as session:
+            return set(
+                session.scalars(
+                    select(ChildChunkRecord.document_id)
+                    .where(
+                        ChildChunkRecord.document_name.ilike(
+                            f"%-{fragment}%", escape="\\"
+                        )
+                    )
+                    .distinct()
+                ).all()
+            )
+
     def filter_child_ids(self, metadata: QueryMetadata) -> set[str]:
         conditions = []
         if metadata.document_id is not None:
             conditions.append(ChildChunkRecord.document_id == metadata.document_id)
-        if metadata.document_name:
-            conditions.append(
-                ChildChunkRecord.document_name.ilike(f"%{metadata.document_name}%")
-            )
+        if metadata.document_number:
+            documents = self.document_ids_for_identifier(metadata.document_number)
+            if not documents:
+                return set()
+            conditions.append(ChildChunkRecord.document_id.in_(documents))
         if metadata.chapter:
             conditions.append(ChildChunkRecord.chapter == metadata.chapter)
         if metadata.section:

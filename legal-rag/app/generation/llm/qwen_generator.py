@@ -47,6 +47,7 @@ class QwenGenerator(BaseLLMGenerator):
         do_sample: bool,
         min_new_tokens: int,
         repetition_penalty: float,
+        no_repeat_ngram_size: int = 0,
         quantization: str = "none",
         adapter_path: str = "",
     ) -> None:
@@ -63,6 +64,7 @@ class QwenGenerator(BaseLLMGenerator):
         self.do_sample = do_sample
         self.min_new_tokens = min_new_tokens
         self.repetition_penalty = repetition_penalty
+        self.no_repeat_ngram_size = no_repeat_ngram_size
         self._model: Any | None = None
         self._tokenizer: Any | None = None
         self._resolved_device: str | None = None
@@ -71,6 +73,25 @@ class QwenGenerator(BaseLLMGenerator):
         # is never serialized into GeneratedAnswer/submission artifacts.
         self.debug_enabled = False
         self.last_generation_debug: dict[str, Any] | None = None
+
+    def build_generation_options(
+        self, *, tokenizer: Any, max_new_tokens: int, temperature: float
+    ) -> dict[str, Any]:
+        """One owner for the decode options, so a second path cannot omit one."""
+        options: dict[str, Any] = {
+            "max_new_tokens": max_new_tokens,
+            "do_sample": self.do_sample,
+            "pad_token_id": tokenizer.pad_token_id,
+            "eos_token_id": tokenizer.eos_token_id,
+            "min_new_tokens": self.min_new_tokens,
+            "repetition_penalty": self.repetition_penalty,
+        }
+        if self.no_repeat_ngram_size:
+            options["no_repeat_ngram_size"] = self.no_repeat_ngram_size
+        if self.do_sample:
+            options["temperature"] = temperature
+            options["top_p"] = self.top_p
+        return options
 
     def load(self) -> None:
         """Load tokenizer/model once from an existing local path or HF cache."""
@@ -175,19 +196,11 @@ class QwenGenerator(BaseLLMGenerator):
         encoded = {
             key: value.to(self._resolved_device) for key, value in encoded.items()
         }
-        generation_options: dict[str, Any] = {
-            "max_new_tokens": requested_tokens,
-            "do_sample": self.do_sample,
-            "pad_token_id": tokenizer.pad_token_id,
-            "eos_token_id": tokenizer.eos_token_id,
-            "min_new_tokens": self.min_new_tokens,
-            "repetition_penalty": self.repetition_penalty,
-        }
-        if self.do_sample:
-            generation_options.update(
-                temperature=requested_temperature,
-                top_p=self.top_p,
-            )
+        generation_options = self.build_generation_options(
+            tokenizer=tokenizer,
+            max_new_tokens=requested_tokens,
+            temperature=requested_temperature,
+        )
         generation_started = time.perf_counter()
         with torch.inference_mode():
             output = model.generate(**encoded, **generation_options)
@@ -294,19 +307,11 @@ class QwenGenerator(BaseLLMGenerator):
             )
         encoded = {k: v.to(self._resolved_device) for k, v in encoded.items()}
 
-        options: dict[str, Any] = {
-            "max_new_tokens": requested_tokens,
-            "do_sample": self.do_sample,
-            "pad_token_id": tokenizer.pad_token_id,
-            "eos_token_id": tokenizer.eos_token_id,
-            "min_new_tokens": self.min_new_tokens,
-            "repetition_penalty": self.repetition_penalty,
-        }
-        if self.do_sample:
-            options.update(
-                temperature=self.temperature if temperature is None else temperature,
-                top_p=self.top_p,
-            )
+        options = self.build_generation_options(
+            tokenizer=tokenizer,
+            max_new_tokens=requested_tokens,
+            temperature=self.temperature if temperature is None else temperature,
+        )
 
         started = time.perf_counter()
         with torch.inference_mode():

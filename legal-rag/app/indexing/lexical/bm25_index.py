@@ -31,6 +31,18 @@ class BM25IndexWriter:
         row = self._connection.execute("SELECT count(*) FROM chunks").fetchone()
         return int(row[0]) if row else 0
 
+    @staticmethod
+    def _indexed_text(chunk: ChildChunk) -> str:
+        """Index what dense retrieval embeds, so both see the same metadata.
+
+        A document number lives in the hierarchy line that embedding_text
+        prefixes, essentially never in the body of the article, so indexing the
+        bare text left BM25 unable to match a citation by number — the one
+        lookup a lexical index should be best at. Falls back to the raw text if
+        an older chunk has no embedding_text.
+        """
+        return getattr(chunk, "embedding_text", None) or chunk.text
+
     def add_batch(self, chunks: list[ChildChunk]) -> None:
         """Add one bounded batch and commit it immediately."""
         with self._connection:
@@ -46,12 +58,12 @@ class BM25IndexWriter:
                     )
                     self._connection.execute(
                         "INSERT INTO chunks(rowid, child_id, text) VALUES (?, ?, ?)",
-                        (row_id, chunk.child_id, chunk.text),
+                        (row_id, chunk.child_id, self._indexed_text(chunk)),
                     )
                 else:
                     cursor = self._connection.execute(
                         "INSERT INTO chunks(child_id, text) VALUES (?, ?)",
-                        (chunk.child_id, chunk.text),
+                        (chunk.child_id, self._indexed_text(chunk)),
                     )
                     self._connection.execute(
                         "INSERT INTO chunk_ids(child_id, fts_rowid) VALUES (?, ?)",

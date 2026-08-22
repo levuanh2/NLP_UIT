@@ -32,6 +32,11 @@ class VietnameseReranker(BaseReranker):
         self._tokenizer: Any | None = None
         self._parameter_budget_verified = parameter_budget_approved
         self._parameter_budget_approved = parameter_budget_approved
+        # E5 instrumentation, observational only: the last rerank() call
+        # publishes every score it computed here, including for candidates that
+        # were then truncated away. Nothing in the ranking path reads these.
+        self.last_scores: dict[str, float] = {}
+        self.last_input_order: list[str] = []
 
     def load(self) -> None:
         if not self.local_files_only:
@@ -78,6 +83,29 @@ class VietnameseReranker(BaseReranker):
             )
         self._parameter_budget_verified = True
 
+    def _scoring_text(self, candidate: RetrievalCandidate) -> str:
+        """Score the same text dense retrieval embedded, hierarchy line included.
+
+        The stored embedding_text prefixes a chunk with its document name and
+        legal path, which is where a document number lives; the bare chunk text
+        almost never repeats it. Scoring the bare text meant the reranker judged
+        relevance blind to which Điều the chunk belongs to. Falls back to the
+        chunk text when embedding_text is absent, so an index built before this
+        column existed still reranks.
+        """
+        child = None
+        if self.repository is not None:
+            child = self.repository.get_child(candidate.child_id)
+        enriched = getattr(child, "embedding_text", None) if child else None
+        if enriched:
+            return enriched
+        text = candidate.text or (child.text if child else None)
+        if not text:
+            raise RuntimeError(
+                f"Reranker could not resolve child text: {candidate.child_id}"
+            )
+        return text
+
     def rerank(
         self,
         query: str,
@@ -96,17 +124,7 @@ class VietnameseReranker(BaseReranker):
                 "Reranker inference is disabled until verify_parameter_budget() "
                 "confirms the configured embedding + reranker + LLM total is below 4B"
             )
-        texts: list[str] = []
-        for candidate in candidates:
-            text = candidate.text
-            if text is None and self.repository is not None:
-                child = self.repository.get_child(candidate.child_id)
-                text = child.text if child else None
-            if text is None:
-                raise RuntimeError(
-                    f"Reranker could not resolve child text: {candidate.child_id}"
-                )
-            texts.append(text)
+        texts = [self._scoring_text(candidate) for candidate in candidates]
 
         scored: list[tuple[RetrievalCandidate, float]] = []
         import torch
@@ -137,6 +155,42 @@ class VietnameseReranker(BaseReranker):
                     zip(batch_candidates, values.float().cpu().tolist(), strict=True)
                 )
         scored.sort(key=lambda item: (-item[1], item[0].child_id))
+
+        # E5: record the full score table before truncation, so a diagnostic can
+        # ask what score a dropped candidate actually received instead of
+        # inferring it from rank. Writes only; never read below.
+        self.last_scores = {
+            candidate.child_id: float(value) for candidate, value in scored
+        }
+        self.last_input_order = [candidate.child_id for candidate in candidates]
+
+        # E2: optionally fuse the reranker's ordering with the fusion ordering it
+        # was handed, instead of discarding the latter. Set RERANKER_BLEND_RRF to
+        # the reciprocal-rank constant (60 matches rrf_k) to enable; unset or 0
+        # keeps the reranker authoritative, which is the baseline behaviour.
+        # Ranks are fused rather than raw scores because a cross-encoder logit
+        # and an RRF score share no scale.
+        blend_k = int(os.environ.get("RERANKER_BLEND_RRF", "0") or 0)
+        if blend_k > 0:
+            fusion_rank = {
+                candidate.child_id: position
+                for position, candidate in enumerate(candidates, start=1)
+            }
+            rerank_rank = {
+                candidate.child_id: position
+                for position, (candidate, _) in enumerate(scored, start=1)
+            }
+            scored = sorted(
+                scored,
+                key=lambda item: (
+                    -(
+                        1.0 / (blend_k + rerank_rank[item[0].child_id])
+                        + 1.0 / (blend_k + fusion_rank[item[0].child_id])
+                    ),
+                    item[0].child_id,
+                ),
+            )
+
         return [
             candidate.model_copy(
                 update={

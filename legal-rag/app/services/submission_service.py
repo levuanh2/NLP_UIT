@@ -167,6 +167,25 @@ class SubmissionService:
             stream.write(answer.model_dump_json() + "\n")
             stream.flush()
 
+    @staticmethod
+    def classify_failure(error: str) -> str:
+        """Name the failure so evaluation can refuse to score a crashed run.
+
+        A submission has to carry every question id, so a crashed question still
+        gets the abstention text - but that text then looks exactly like a
+        deliberate abstention. One run scored METEOR 0.1159 off 152 questions
+        that had died of CUDA OOM. The type recorded here is what lets the
+        scorer tell a crash from a decision.
+        """
+        lowered = error.lower()
+        if "out of memory" in lowered or "cuda_oom" in lowered:
+            return "CUDA_OOM"
+        if "cuda" in lowered:
+            return "CUDA_ERROR"
+        if "failed validation" in lowered:
+            return "VALIDATION"
+        return "GENERATION_ERROR"
+
     def _append_failure(self, question_id: str, error: str) -> None:
         """Log abstentions so progress is visible; never read back, so a rerun
         still retries every question that has no checkpointed answer."""
@@ -176,7 +195,12 @@ class SubmissionService:
         with self.failure_path.open("a", encoding="utf-8") as stream:
             stream.write(
                 json.dumps(
-                    {"question_id": question_id, "error": error}, ensure_ascii=False
+                    {
+                        "question_id": question_id,
+                        "failure_type": self.classify_failure(error),
+                        "error": error,
+                    },
+                    ensure_ascii=False,
                 )
                 + "\n"
             )

@@ -109,6 +109,7 @@ def build_local_rag_runtime(
             do_sample=settings.do_sample,
             min_new_tokens=settings.min_new_tokens,
             repetition_penalty=settings.repetition_penalty,
+            no_repeat_ngram_size=settings.no_repeat_ngram_size,
             quantization=settings.model_quantization,
             adapter_path=settings.llm_adapter_path,
         )
